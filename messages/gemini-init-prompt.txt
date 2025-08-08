@@ -1,0 +1,7 @@
+About to launch Gemini CLI...
+On first run, you'll see authentication options:
+1. Login with Google (OAuth - opens browser)
+2. Use Gemini API key
+3. Vertex AI
+After setup, type '/quit' to exit.
+Press Enter to continue...

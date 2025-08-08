@@ -1,0 +1,199 @@
+name: Test AITools
+
+on:
+  push:
+    branches:
+      - '**'  # Run on all branches
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+      fail-fast: false
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Setup PowerShell module cache
+        id: psmodulecache
+        uses: potatoqualitee/psmodulecache@v6.2.1
+        with:
+          modules-to-cache: PSFramework:1.7.249, Microsoft.PowerShell.ThreadJob:2.2.0, Pester:5.6.1
+
+      - name: Cache winget packages (Windows only)
+        if: runner.os == 'Windows'
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\Packages\Microsoft.DesktopAppInstaller_8wekyb3d8bbwe\LocalCache
+          key: ${{ runner.os }}-winget-${{ hashFiles('.github/workflows/*.yml') }}
+          restore-keys: |
+            ${{ runner.os }}-winget-
+
+      - name: Setup PowerShell
+        shell: pwsh
+        run: |
+          Write-Host "PowerShell version: $($PSVersionTable.PSVersion)"
+          Write-Host "OS: $($PSVersionTable.OS)"
+          Write-Host "Platform: $($PSVersionTable.Platform)"
+
+      - name: Setup Node.js (required for ClaudeCode on Linux/macOS)
+        if: runner.os != 'Windows'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Check if Install-AITool.ps1 changed
+        id: check_install_tool
+        shell: pwsh
+        run: |
+          $changed = git diff --name-only origin/main...HEAD | Select-String -Pattern "public/Install-AITool.ps1"
+          if ($changed) {
+            echo "install_tool_changed=true" >> $env:GITHUB_OUTPUT
+            Write-Host "Install-AITool.ps1 has changed - will test Aider installation on Windows"
+          } else {
+            echo "install_tool_changed=false" >> $env:GITHUB_OUTPUT
+            Write-Host "Install-AITool.ps1 unchanged - will skip Aider on Windows"
+          }
+
+      - name: Install AI tools (skip Aider and Gemini on Windows for speed)
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          Import-Module ./aitools.psd1 -Force
+          if ($IsWindows -or $env:OS -match 'Windows') {
+            Write-Host "Installing AI tools on Windows (skipping Aider and Gemini due to long install times)..."
+            $tools = @('ClaudeCode', 'Codex', 'GitHubCopilot')
+            foreach ($tool in $tools) {
+              Write-Host "Installing $tool..."
+              Install-AITool -Name $tool -SkipInitialization -Verbose
+            }
+          } else {
+            Write-Host "Installing all AI tools..."
+            Install-AITool -Name All -SkipInitialization -Verbose
+          }
+
+      - name: Install Aider and Gemini on Windows (only when Install-AITool.ps1 changes)
+        if: runner.os == 'Windows' && steps.check_install_tool.outputs.install_tool_changed == 'true'
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          Import-Module ./aitools.psd1 -Force
+          Write-Host "Install-AITool.ps1 changed - testing Aider and Gemini installation..."
+          Install-AITool -Name Aider -SkipInitialization -Verbose
+          Install-AITool -Name Gemini -SkipInitialization -Verbose
+
+      - name: Verify at least ClaudeCode is installed
+        shell: pwsh
+        run: |
+          Import-Module ./aitools.psd1 -Force
+          $claude = Get-Command claude -ErrorAction SilentlyContinue
+          if (-not $claude) {
+            Write-Host "ClaudeCode not found, installing individually..."
+            Install-AITool -Name ClaudeCode -SkipInitialization -Verbose
+
+            # Refresh path after installation for current session
+            if ($IsWindows -or $env:OS -match 'Windows') {
+              $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
+            } else {
+              # On Unix, npm global installs go to different locations
+              $npmBin = npm config get prefix 2>$null
+              if ($npmBin) {
+                $env:PATH = "$npmBin/bin:$env:PATH"
+              }
+            }
+
+            # Persist PATH to subsequent steps using GitHub Actions environment file
+            # This is necessary because each step starts a new shell session
+            if ($IsWindows -or $env:OS -match 'Windows') {
+              $newPath = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
+              "PATH=$newPath" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+              Write-Host "Updated GITHUB_PATH for subsequent steps"
+            } else {
+              $npmBin = npm config get prefix 2>$null
+              if ($npmBin) {
+                "$npmBin/bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+                Write-Host "Added npm bin to GITHUB_PATH: $npmBin/bin"
+              }
+            }
+
+            # Check again after path refresh
+            $claude = Get-Command claude -ErrorAction SilentlyContinue
+            if (-not $claude) {
+              Write-Warning "ClaudeCode still not found after installation. Checking npm global path..."
+              npm list -g --depth=0
+            }
+          } else {
+            Write-Host "ClaudeCode is installed"
+            & claude --version
+          }
+
+      - name: Set ClaudeCode as default
+        shell: pwsh
+        run: |
+          Import-Module ./aitools.psd1 -Force
+          # Verify claude is available before setting as default (to avoid Read-Host prompt)
+          $claude = Get-Command claude -ErrorAction SilentlyContinue
+          if ($claude) {
+            Write-Host "Setting ClaudeCode as default tool..."
+            Set-AIToolDefault -Tool ClaudeCode
+          } else {
+            Write-Error "ClaudeCode is not installed, cannot set as default"
+            exit 1
+          }
+
+      - name: Setup Claude OAuth Token
+        shell: pwsh
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          Write-Host "Setting up CLAUDE_CODE_OAUTH_TOKEN environment variable..."
+          if ([string]::IsNullOrEmpty($env:CLAUDE_CODE_OAUTH_TOKEN)) {
+            Write-Warning "CLAUDE_CODE_OAUTH_TOKEN is not set in secrets"
+            exit 1
+          }
+          Write-Host "CLAUDE_CODE_OAUTH_TOKEN is configured (length: $($env:CLAUDE_CODE_OAUTH_TOKEN.Length))"
+
+      - name: Test Invoke-AITool quick chat
+        shell: pwsh
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          Import-Module ./aitools.psd1 -Force
+          Write-Host "Testing Invoke-AITool with quick chat..."
+          $result = Invoke-AITool -Prompt "Hello" -Tool ClaudeCode
+          Write-Host "Chat result:"
+          $result | Format-List
+
+      - name: Clone dbatools repo at specific commit
+        shell: pwsh
+        run: |
+          Write-Host "Cloning dbatools repository at commit ed7f53d81f28cea1e4b691f2d92b8b6042802d12..."
+          git clone --depth 1 --single-branch --branch master https://github.com/dataplat/dbatools.git
+          cd dbatools
+          git fetch --depth 50 origin ed7f53d81f28cea1e4b691f2d92b8b6042802d12
+          git checkout ed7f53d81f28cea1e4b691f2d92b8b6042802d12
+
+      - name: Run Pester integration tests
+        shell: pwsh
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          Import-Module ./aitools.psd1 -Force
+          Write-Host "Installing Pester..."
+          Install-Module -Name Pester -Force -SkipPublisherCheck -MinimumVersion 5.0.0
+          Write-Host "Running Pester tests..."
+          $config = New-PesterConfiguration
+          $config.Run.Path = "Tests/aitools.Tests.ps1"
+          $config.Output.Verbosity = "Detailed"
+          $config.Run.Exit = $true
+          Invoke-Pester -Configuration $config
+
+      - name: Show git diff
+        shell: pwsh
+        run: |
+          Write-Host "Showing git diff of changes..."
+          Push-Location dbatools
+          git diff --color=always tests/Invoke-DbaDbShrink.Tests.ps1
+          Pop-Location

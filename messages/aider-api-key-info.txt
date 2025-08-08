@@ -1,0 +1,23 @@
+Aider requires API key configuration (no login command available).
+
+Configuration options:
+1. Command line flag: aider --model sonnet --api-key anthropic=YOUR_KEY
+2. Environment variable (examples below)
+3. Create .env file in ~/.aider/.env or project root
+
+Environment variables you can set:
+- ANTHROPIC_API_KEY (for Claude models)
+- OPENAI_API_KEY (for OpenAI models)
+- GEMINI_API_KEY (for Gemini models)
+
+Example (Windows PowerShell):
+$env:ANTHROPIC_API_KEY = "your-api-key-here"
+[System.Environment]::SetEnvironmentVariable("ANTHROPIC_API_KEY", "your-api-key-here", "User")
+
+Example (Linux/Mac):
+export ANTHROPIC_API_KEY="your-api-key-here"
+
+Example (.env file in ~/.aider/.env or project root):
+ANTHROPIC_API_KEY=your-api-key-here
+
+For more information, visit: https://aider.chat/docs/config/api-keys.html
