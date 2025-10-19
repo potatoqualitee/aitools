@@ -48,7 +48,8 @@ jobs:
         id: check_install_tool
         shell: pwsh
         run: |
-          $changed = git diff --name-only origin/main...HEAD | Select-String -Pattern "public/Install-AITool.ps1"
+          # Get files changed in the current commit
+          $changed = git diff-tree --no-commit-id --name-only -r HEAD | Select-String -Pattern "public/Install-AITool.ps1"
           if ($changed) {
             echo "install_tool_changed=true" >> $env:GITHUB_OUTPUT
             Write-Host "Install-AITool.ps1 has changed - will test Aider installation on Windows"
