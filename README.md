@@ -50,7 +50,7 @@ aitools orchestrates those CLIs with PowerShell's predictability, discoverabilit
 
 ## Why aitools?
 
-The reason I built aitools is so that I wouldn't have to repeatedly do `claude --help` and `gemini --help` when I need to do something. I looked up those just once and then wrapped PowerShell around it. I also don't want to figure out how to install or update each of them. Now I just use a singular command, `Update-AITool` to update all of my agentic CLIs.
+The reason I built aitools is so that I wouldn't have to repeatedly do `claude --help` and `gemini --help` when I need to figure out how to do something in the CLI. I looked up those just once and then wrapped PowerShell around it. I also don't want to figure out how to install or update each of them. Now I just use a singular command, `Update-AITool` to update all of my agentic CLIs.
 
 | Without aitools                           | With aitools                        |
 | ----------------------------------------- | ----------------------------------- |
@@ -121,6 +121,17 @@ Get-ChildItem ./public/*.ps1 |
 Get-ChildItem *.ps1 -Recurse |
   Invoke-AITool -Prompt "Apply OTBS formatting"
 ```
+
+### 🖼️ Image-Driven Design (Codex Only)
+
+```powershell
+# Create a Hugo website with colors extracted from an image
+Invoke-AITool -Tool Codex `
+  -Prompt "Create a new markdown-driven Hugo website that uses the color scheme of the image attachment" `
+  -Attachment ".\design-inspiration.png"
+```
+
+> **Note:** The `-Attachment` parameter only works with **Codex** and supports image files (`.png`, `.jpg`, `.jpeg`, `.gif`, `.bmp`, `.webp`, `.svg`).
 
 ### ⚙️ SDK Upgrades (Example: BurntToast Module)
 

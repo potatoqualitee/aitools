@@ -28,6 +28,10 @@ function Invoke-AITool {
         The reasoning effort level to use (low, medium, high). Only supported by certain models like Codex and Aider.
         Overrides configured default.
 
+    .PARAMETER Attachment
+        Optional image file(s) to attach to the prompt. Only supported by Codex.
+        Accepts common image formats (png, jpg, jpeg, gif, bmp, webp, svg).
+
     .PARAMETER Raw
         Run the command directly without capturing output or assigning to variables.
         Useful for interactive scenarios like Jupyter notebooks where output handling can cause issues.
@@ -76,6 +80,8 @@ function Invoke-AITool {
         [ValidateSet('low', 'medium', 'high')]
         [string]$ReasoningEffort,
         [Parameter()]
+        [string[]]$Attachment,
+        [Parameter()]
         [switch]$Raw
     )
 
@@ -83,6 +89,35 @@ function Invoke-AITool {
         # Save original location for cleanup in finally block
         $script:originalLocation = Get-Location
         Write-PSFMessage -Level Verbose -Message "Saved original location: $script:originalLocation"
+
+        # Validate Attachment parameter - only Codex supports attachments
+        if ($Attachment) {
+            # Determine the effective tool (considering default)
+            $effectiveTool = if ($Tool) { $Tool } else { Get-PSFConfigValue -FullName 'AITools.DefaultTool' -Fallback $null }
+
+            if ($effectiveTool -ne 'Codex') {
+                Stop-PSFFunction -Message "Attachment parameter is only supported by Codex. Current tool: $effectiveTool" -EnableException $true
+                return
+            }
+
+            # Validate that all attachments have valid image extensions
+            $validImageExtensions = @('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp', '.svg')
+            foreach ($attachmentPath in $Attachment) {
+                $extension = [System.IO.Path]::GetExtension($attachmentPath).ToLower()
+                if ($extension -notin $validImageExtensions) {
+                    Stop-PSFFunction -Message "Invalid attachment file type: $attachmentPath. Only image files are supported: $($validImageExtensions -join ', ')" -EnableException $true
+                    return
+                }
+
+                # Verify the file exists
+                if (-not (Test-Path $attachmentPath)) {
+                    Stop-PSFFunction -Message "Attachment file not found: $attachmentPath" -EnableException $true
+                    return
+                }
+            }
+
+            Write-PSFMessage -Level Verbose -Message "Validated $($Attachment.Count) attachment(s)"
+        }
 
         # Process Prompt parameter - detect if it's a file object or string
         $promptText = if ($Prompt -is [System.IO.FileInfo] -or $Prompt -is [System.IO.FileSystemInfo]) {
@@ -320,6 +355,9 @@ function Invoke-AITool {
                     }
                     if ($reasoningEffortToUse) {
                         $argumentParams['ReasoningEffort'] = $reasoningEffortToUse
+                    }
+                    if ($Attachment) {
+                        $argumentParams['Attachment'] = $Attachment
                     }
                     New-CodexArgument @argumentParams
                 }
@@ -610,6 +648,9 @@ function Invoke-AITool {
                     }
                     if ($reasoningEffortToUse) {
                         $argumentParams['ReasoningEffort'] = $reasoningEffortToUse
+                    }
+                    if ($Attachment) {
+                        $argumentParams['Attachment'] = $Attachment
                     }
                     New-CodexArgument @argumentParams
                 }

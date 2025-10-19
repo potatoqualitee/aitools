@@ -7,7 +7,8 @@ function New-CodexArgument {
         [bool]$UsePermissionBypass,
         [string]$WorkingDirectory,
         [ValidateSet('low', 'medium', 'high')]
-        [string]$ReasoningEffort
+        [string]$ReasoningEffort,
+        [string[]]$Attachment
     )
 
     Write-PSFMessage -Level Verbose -Message "Building Codex CLI arguments..."
@@ -45,6 +46,21 @@ function New-CodexArgument {
     if ($ReasoningEffort) {
         Write-PSFMessage -Level Verbose -Message "Using reasoning effort: $ReasoningEffort"
         $arguments += '--config', "model_reasoning_effort=`"$ReasoningEffort`""
+    }
+
+    # Add image attachments if provided
+    if ($Attachment) {
+        foreach ($attachmentPath in $Attachment) {
+            # Resolve to absolute path and normalize
+            $resolvedPath = Resolve-Path -Path $attachmentPath -ErrorAction SilentlyContinue
+            if ($resolvedPath) {
+                $normalizedPath = $resolvedPath.Path -replace '\\', '/'
+                Write-PSFMessage -Level Verbose -Message "Adding attachment: $normalizedPath"
+                $arguments += '-i', $normalizedPath
+            } else {
+                Write-PSFMessage -Level Warning -Message "Could not resolve attachment path: $attachmentPath"
+            }
+        }
     }
 
     # Build the prompt to include the target file reference
