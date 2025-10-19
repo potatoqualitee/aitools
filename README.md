@@ -81,22 +81,6 @@ This mirrors how you'd reason through a codebase manually — observe, act, veri
 
 ---
 
-## Tool Reasoning Profiles
-
-Each supported CLI has distinct reasoning characteristics.
-
-| Tool            | Strengths                                                                   | Limitations                      |
-| --------------- | --------------------------------------------------------------------------- | -------------------------------- |
-| **Claude Code** | BEST coder by far, flat monthly rate | Struggles with very large files (400+ lines)  |
-| **Aider**       | Reliable deterministic diffs, fast iterative patches                        | APIs are expensive          |
-| **Gemini CLI**  | Lots of free calls, second best coder, huge context                                 | APIs are expensive once you get past the free call limit     |
-| **Copilot CLI** | Affordable                                     | Just released, basically an alpha CLI |
-| **Codex CLI**   | Fast, flat monthly rate                                               | No idea why people like its coding     |
-
-aitools lets you combine them — even run all in comparison mode — for multi-agent reasoning. Or just make your preferred agent more accessible, like I do.
-
----
-
 ## Quick Start
 
 ```powershell
@@ -202,6 +186,22 @@ Set-AIToolConfig -Tool ClaudeCode -Model claude-sonnet-4-5
 # Custom prompt and context
 Update-PesterTest -PromptFilePath ./prompts/v5migration.md -ContextFilePath ./style.md
 ```
+
+---
+
+## Tool Reasoning Profiles
+
+Each supported CLI has distinct reasoning characteristics.
+
+| Tool            | Strengths                                                                   | Limitations                      |
+| --------------- | --------------------------------------------------------------------------- | -------------------------------- |
+| **Claude Code** | BEST coder by far, flat monthly rate | Struggles with very large files (400+ lines)  |
+| **Aider**       | Reliable deterministic diffs, fast iterative patches                        | APIs are expensive          |
+| **Gemini CLI**  | Lots of free calls, second best coder, huge context                                 | APIs are expensive once you get past the free call limit     |
+| **Copilot CLI** | Affordable                                     | Just released, basically an alpha CLI |
+| **Codex CLI**   | Fast, flat monthly rate                                               | No idea why people like its coding     |
+
+aitools lets you combine them — even run all in comparison mode — for multi-agent reasoning. Or just make your preferred agent more accessible, like I do.
 
 ---
 
