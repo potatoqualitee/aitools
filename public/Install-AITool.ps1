@@ -145,8 +145,10 @@ function Install-AITool {
                     return
                 }
             } else {
-                $nodeVersion = & node --version 2>&1 | Out-String
-                Write-PSFMessage -Level Verbose -Message "Node.js is available: $nodeVersion"
+                $nodeVersion = (& node --version 2>&1 | Out-String).Trim()
+                if ($nodeVersion) {
+                    Write-PSFMessage -Level Verbose -Message "Node.js is available: $nodeVersion"
+                }
             }
         }
 
@@ -233,10 +235,10 @@ function Install-AITool {
 
                     # Send output to verbose (filter out empty lines)
                     if ($stdout) {
-                        $stdout -split "`n" | Where-Object { $_.Trim() } | ForEach-Object { Write-PSFMessage -Level Verbose -Message $_ }
+                        $stdout -split "`n" | Where-Object { $_.Trim() } | ForEach-Object { $trimmed = $_.Trim(); if ($trimmed) { Write-PSFMessage -Level Verbose -Message $trimmed } }
                     }
                     if ($stderr) {
-                        $stderr -split "`n" | Where-Object { $_.Trim() } | ForEach-Object { Write-PSFMessage -Level Verbose -Message $_ }
+                        $stderr -split "`n" | Where-Object { $_.Trim() } | ForEach-Object { $trimmed = $_.Trim(); if ($trimmed) { Write-PSFMessage -Level Verbose -Message $trimmed } }
                     }
 
                     Write-PSFMessage -Level Verbose -Message "Command $commandIndex completed with exit code: $exitCode"

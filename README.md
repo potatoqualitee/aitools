@@ -1,357 +1,227 @@
-# AITools PowerShell Module
+# aitools
 
-A PowerShell module for managing and automating AI-powered code editing tools, with specialized support for migrating Pester tests from v4 to v5 format.
+[![PowerShell Gallery](https://img.shields.io/powershellgallery/v/aitools)](https://www.powershellgallery.com/packages/aitools)
+[![Downloads](https://img.shields.io/powershellgallery/dt/aitools)](https://www.powershellgallery.com/packages/aitools)
+[![GitHub Stars](https://img.shields.io/github/stars/potatoqualitee/aitools?style=social)](https://github.com/potatoqualitee/aitools)
 
-## Overview
+<img align="left" src="https://raw.githubusercontent.com/potatoqualitee/aitools/main/logo.png" alt="aitools logo" width="96">
 
-AITools lets you batch process files with Claude Code, Aider, Gemini, GitHub Copilot, and OpenAI Codex using consistent PowerShell commands.
+**Batch-process your code with popular AI CLI editors.**
+aitools is a PowerShell module for managing and automating *agentic CLI tools* such as
+[**Claude Code**](https://github.com/anthropics/claude-code), [**Aider**](https://github.com/Aider-AI/aider), [**Gemini CLI**](https://github.com/google-gemini/gemini-cli), [**GitHub Copilot CLI**](https://github.com/github/copilot-cli), and [**OpenAI Codex**](https://github.com/openai/codex).
 
-Unlike API wrappers that require you to write prompts and handle file operations yourself, these agentic CLI tools actually edit your code. They read files, make decisions, apply changes, and write them back. AITools gives you PowerShell-native batch processing, persistent configuration, and pipeline support for these agents so you can process hundreds of files with a single command.
+Unlike API wrappers that just send prompts, these CLIs actually *read, understand, and rewrite your code* — and aitools wraps them to make them scriptable, and repeatable.
+
+---
+
+## Table of Contents
+
+* [Wrapper vs Agentic CLI Tools](#wrapper-vs-agentic-cli-tools)
+* [Why aitools?](#why-aitools)
+* [How aitools Thinks](#how-aitools-thinks)
+* [Execution Model](#execution-model)
+* [Tool Reasoning Profiles](#tool-reasoning-profiles)
+* [Quick Start](#quick-start)
+* [Common Scenarios](#common-scenarios)
+* [Installation](#installation)
+* [Advanced Usage](#advanced-usage)
+* [Demo Walkthrough](#demo-walkthrough)
+* [Contributing](#contributing)
+* [License](#license)
+
+---
+
+## Wrapper vs Agentic CLI Tools
+
+You might be wondering why I published this when [PSOpenAI](https://github.com/mkht/PSOpenAI) exists. I love PSOpenAI — it's the best PowerShell wrapper for the OpenAI-compatible APIs.
+
+But it's built for **API interaction**, not **code transformation**. When you use agentic tools like Claude Code or GitHub Copilot CLI, they come with toolkits built in where as APIs are bare, as designed.
+
+| PSOpenAI                                  | Agentic CLI Tools                              |
+| ----------------------------------------- | ---------------------------------------------- |
+| API wrapper — you send a prompt, get text | Code editor — it opens, edits, and saves files |
+| You handle file I/O, diffs, and context   | Built-in context, patching, and safety         |
+| Great for one-off prompts and scripting   | Great for real-world refactors and migrations  |
+| Requires workflow scaffolding             | Ships with full toolchain and local memory     |
+
+aitools orchestrates those CLIs with PowerShell's predictability, discoverability and power.
+
+---
+
+## Why aitools?
+
+The reason I built aitools is so that I wouldn't have to repeatedly do `claude --help` and `gemini --help` when I need to do something. I looked up those just once and then wrapped PowerShell around it. I also don't want to figure out how to install or update each of them. Now I just use a singular command, `Update-AITool` to update all of my agentic CLIs.
+
+| Without aitools                           | With aitools                        |
+| ----------------------------------------- | ----------------------------------- |
+| Remember CLI flags and install steps      | `Install-AITool -Name ClaudeCode`   |
+| Switch between five different CLIs        | One consistent PowerShell interface |
+| Manually open each file and paste prompts | Batch process hundreds of files     |
+| Track local edits manually                | Automatic diff & patch management   |
+
+💡 **Purpose:** aitools brings *agentic AI* into your automation stack. Refactor, migrate, document, and standardize codebases at scale using the same workflows that PowerShell admins and developers already love.
+
+---
+
+## Execution Model
+
+Every aitools operation follows a predictable 3-step reasoning cycle:
+
+1. **Reasoning step** — Pass prompt + migration + style context to the selected AI CLI
+1. **Diff & validation** — Track and display exact edits for review or automated commit
+
+Example:
+
+```powershell
+Set-AIToolDefault -Tool ClaudeCode
+Get-ChildItem ./tests/*.Tests.ps1 | Update-PesterTest -First 20 -Skip 30 -Verbose
+```
+
+This mirrors how you'd reason through a codebase manually — observe, act, verify — but scaled across hundreds of files.
+
+---
+
+## Tool Reasoning Profiles
+
+Each supported CLI has distinct reasoning characteristics.
+
+| Tool            | Strengths                                                                   | Limitations                      |
+| --------------- | --------------------------------------------------------------------------- | -------------------------------- |
+| **Claude Code** | BEST coder by far, flat monthly rate | Struggles with very large files (400+ lines)  |
+| **Aider**       | Reliable deterministic diffs, fast iterative patches                        | APIs are expensive          |
+| **Gemini CLI**  | Lots of free calls, second best coder, huge context                                 | APIs are expensive once you get past the free call limit     |
+| **Copilot CLI** | Affordable                                     | Just released, basically an alpha CLI |
+| **Codex CLI**   | Fast, flat monthly rate                                               | No idea why people like its coding     |
+
+aitools lets you combine them — even run all in comparison mode — for multi-agent reasoning. Or just make your preferred agent more accessible, like I do.
+
+---
 
 ## Quick Start
 
 ```powershell
-# Install and configure
-Install-AITool -Name Gemini    # Free: 1000 calls/day
-Set-AIToolDefault -Tool Gemini
+# Install the module
+Install-Module aitools
 
-# Process files
-Invoke-AITool -Prompt "Add error handling" -Path ./script.ps1
-Get-ChildItem *.ps1 | Invoke-AITool -Prompt "Add help docs"
+# Install and set your favorite AI CLI
+Install-AITool -Name ClaudeCode
+Set-AIToolDefault -Tool ClaudeCode
 
-# Migrate Pester tests
+# Migrate all your Pester v4 tests to v5
 Get-ChildItem tests\*.Tests.ps1 | Update-PesterTest
 ```
+
+✅ Supports: **Claude Code**, **Aider**, **Gemini CLI**, **GitHub Copilot CLI**, and **Codex CLI**<br/>
+🧠 Works on **Windows, Linux, and macOS**
+
+---
+
+## Common Scenarios
+
+### 🧪 Test Framework Migrations
+
+```powershell
+Get-ChildItem ./tests/*.Tests.ps1 | Update-PesterTest
+```
+
+### 📚 Documentation Sweeps
+
+```powershell
+Get-ChildItem ./public/*.ps1 |
+  Invoke-AITool -Prompt "Add complete comment-based help for each parameter. Include 3 working examples."
+```
+
+### 🎨 Style Enforcement
+
+```powershell
+Get-ChildItem *.ps1 -Recurse |
+  Invoke-AITool -Prompt "Apply OTBS formatting"
+```
+
+### ⚙️ SDK Upgrades (Example: BurntToast Module)
+
+Modules like [**BurntToast**](https://github.com/Windos/BurntToast), which wrap native Windows SDKs, evolve as the underlying APIs change — for example, migrating from the **Windows 10 Notification API** to the **Windows 11 adaptive toast model**.
+
+```powershell
+# Modernize BurntToast module code to the latest Windows 11 SDK
+$splatUpgrade = @{
+    Path            = "./burnttoast/*.ps1"
+    PromptFilePath  = "./prompts/api-upgrade.md"
+    ContextFilePath = @(
+        "./docs/windows11-toast-sdk.md",   # Updated WinRT namespaces
+        "./docs/styleguide.md"             # Internal PowerShell guidelines
+    )
+    Tool            = "ClaudeCode"
+    Verbose         = $true
+}
+Invoke-AITool @splatUpgrade
+```
+
+This setup uses:
+
+* **`PromptFilePath`** — main migration instructions (`api-upgrade.md`)
+* **`ContextFilePath`** — SDK docs, XML schema examples, or layout specs
+
+aitools passes all of this to the AI agent so it can reason about namespace changes,
+XML property renames, and adaptive layout differences — and automatically refactor your module.
+
+---
 
 ## Installation
 
 ```powershell
-Install-Module aitools
-Install-AITool -Name ClaudeCode  # or Aider, Gemini, GitHubCopilot, Codex
-Set-AIToolDefault -AutoDetect
+# PowerShell Gallery (Windows, Linux, macOS)
+Install-Module aitools -Scope CurrentUser
+
+# Then install your individual agentic tools
+Install-AITool -Name Gemini
+Install-AITool -Name Aider
+Install-AITool -Name ClaudeCode
+
+# Or all of them
+Install-AITool -Name All
 ```
 
-## Commands
-
-### Install-AITool
-
-Installs AI CLI tools with cross-platform support.
+### Update all tools
 
 ```powershell
-Install-AITool ClaudeCode
-Install-AITool -Name Aider -Verbose
-```
-
-### Initialize-AITool
-
-Initializes and authenticates AI tools after installation.
-
-```powershell
-# Initialize Claude Code (runs setup-token)
-Initialize-AITool -Tool ClaudeCode
-
-# Initialize Aider (shows API key configuration instructions)
-Initialize-AITool -Tool Aider
-
-# Initialize Gemini (runs login flow)
-Initialize-AITool -Tool Gemini
-```
-
-### Update-AITool
-
-Updates AI tools to their latest versions.
-
-```powershell
-# Update a specific tool
-Update-AITool -Name ClaudeCode
-
-# Update all installed tools
 Update-AITool
 ```
 
-### Set-AIToolDefault
-
-Sets the default AI tool to use when -Tool is not specified.
-
-```powershell
-# Manually set default tool
-Set-AIToolDefault -Tool ClaudeCode
-
-# Auto-detect and set first available tool
-Set-AIToolDefault -AutoDetect
-```
-
-### Invoke-AITool
-
-Processes files using AI tools with batch support or provides chat-only mode.
-
-```powershell
-# Basic file processing
-$splatInvoke = @{
-    Tool   = "Aider"
-    Prompt = "Fix bugs"
-    Path   = "./script.ps1"
-}
-Invoke-AITool @splatInvoke
-
-# Chat mode (no files)
-Invoke-AITool -Prompt "How do I implement error handling?"
-
-# With context files
-$splatInvoke = @{
-    Tool    = "GitHubCopilot"
-    Prompt  = "Follow style guide"
-    Path    = "./script.ps1"
-    Context = @("./STYLEGUIDE.md")
-}
-Invoke-AITool @splatInvoke
-
-# With reasoning effort
-$splatInvoke = @{
-    Prompt          = "Optimize this algorithm"
-    Path            = "./complex.ps1"
-    Tool            = "Codex"
-    ReasoningEffort = "high"
-}
-Invoke-AITool @splatInvoke
-
-# Raw mode (for Jupyter notebooks or direct output)
-Invoke-AITool -Prompt "Fix bugs" -Path "./script.ps1" -Raw
-
-# Pipeline processing
-$splatWhere = @{
-    Property = "Name"
-    Like     = "*Test*"
-}
-$splatInvoke = @{
-    Prompt = "Update to Pester v5"
-    Tool   = "ClaudeCode"
-}
-Get-ChildItem *.ps1 -Recurse |
-    Where-Object @splatWhere |
-    Invoke-AITool @splatInvoke
-```
-
-### Set-AIToolConfig
-
-Manages persistent tool configuration.
-
-```powershell
-# Set model
-Set-AIToolConfig -Tool ClaudeCode -Model claude-sonnet-4-5-20250929
-
-# Enable auto-approve
-Set-AIToolConfig -Tool Aider -PermissionBypass
-
-# Set edit mode (Aider only)
-Set-AIToolConfig -Tool Aider -EditMode Whole
-
-# Set reasoning effort
-Set-AIToolConfig -Tool Codex -ReasoningEffort high
-```
-
-### Update-PesterTest
-
-Migrates Pester v4 tests to v5 format using AI tools.
-
-```powershell
-# Migrate test files
-Get-ChildItem ./tests/*.Tests.ps1 | Update-PesterTest
-
-# Limit number of files processed
-Get-ChildItem ./tests/*.Tests.ps1 | Update-PesterTest -Limit 10
-
-# Use custom prompts
-$splatUpdate = @{
-    InputObject     = "./tests/MyTest.ps1"
-    PromptFilePath  = "./custom-prompt.md"
-    ContextFilePath = "./examples.md"
-}
-Update-PesterTest @splatUpdate
-```
-
-## Real-World Examples
-
-### Batch Update Documentation
-
-```powershell
-# Add help to all public functions
-$splatInvoke = @{
-    Tool   = "ClaudeCode"
-    Prompt = "Add comprehensive comment-based help with examples"
-}
-Get-ChildItem ./public/*.ps1 | Invoke-AITool @splatInvoke
-
-# Use prompt template
-$prompt = Get-AITPrompt -Name "style.md" -Raw
-Get-ChildItem ./public/*.ps1 | Invoke-AITool -Prompt $prompt
-```
-
-### Refactor Test Suite
-
-```powershell
-# Migrate all Pester tests under size limit
-$splatWhere = @{
-    Property = "Length"
-    LT       = 500KB
-}
-$splatUpdate = @{
-    Tool  = "Aider"
-    Limit = 10
-}
-Get-ChildItem ./tests/*.Tests.ps1 |
-    Where-Object @splatWhere |
-    Update-PesterTest @splatUpdate
-```
-
-### Style Enforcement
-
-```powershell
-# Apply style guide to all scripts
-$splatInvoke = @{
-    Tool    = "Aider"
-    Prompt  = "Apply OTBS formatting and remove trailing spaces"
-    Context = @("./STYLEGUIDE.md")
-}
-Get-ChildItem *.ps1 -Recurse | Invoke-AITool @splatInvoke
-```
-
-### Custom Migration
-
-```powershell
-# Use custom prompt and multiple context files
-$splatUpdate = @{
-    InputObject     = "./tests/Get-DbaDatabase.Tests.ps1"
-    PromptFilePath  = "./prompts/custom-prompt.md"
-    ContextFilePath = @("./docs/style.md", "./examples/sample-test.ps1")
-    Tool            = "ClaudeCode"
-    Verbose         = $true
-}
-Update-PesterTest @splatUpdate
-```
+---
 
 ## Advanced Usage
 
-### Process with All Tools
-
-Run operations against all installed tools at once:
-
 ```powershell
-# Install all tools
-Install-AITool -Name All
+# Run multiple tools for comparison
+Invoke-AITool -Path ./script.ps1 -Prompt "Optimize this" -Tool All
 
-# Configure all tools with same settings
-Set-AIToolConfig -Tool All -PermissionBypass
+# Configure defaults
+Set-AIToolConfig -Tool ClaudeCode -Model claude-sonnet-4-5
 
-# Compare results from all tools
-Invoke-AITool -Path "script.ps1" -Prompt "Optimize this code" -Tool All
+# Custom prompt and context
+Update-PesterTest -PromptFilePath ./prompts/v5migration.md -ContextFilePath ./style.md
 ```
 
-### Flexible Input Types
+---
 
-The module accepts various input types for prompts and context:
+## Demo Walkthrough
 
-```powershell
-# Prompt as string
-Invoke-AITool -Prompt "Add error handling" -Path ./script.ps1
+The included Jupyter notebook (`demo.ipynb`) shows a real-world, reasoning-driven migration of **dbatools' 3,500+ Pester tests** from v4 to v5.
+It demonstrates how aitools coordinates *agentic CLIs* through three stages of reasoning:
 
-# Prompt as file path (auto-detected and read)
-Invoke-AITool -Prompt "./prompts/style.md" -Path ./script.ps1
+1. **Initialization** — import the module, set `$PSDefaultParameterValues`, and clear workspace diffs
+2. **Observation & action** — open a real test file (`Invoke-DbaDbShrink.Tests.ps1`) and run `Update-PesterTest` via Claude Code
+3. **Evaluation** — review structural refactors (BeforeAll/AfterAll), parameter tests, and style enforcement
 
-# Prompt as FileInfo object
-$prompt = Get-ChildItem ./prompts/migration.md
-Invoke-AITool -Prompt $prompt -Path ./script.ps1
+It highlights how Claude achieved ~80% automation accuracy, with remaining fixes due to legacy code quality.
+The notebook illustrates *how aitools thinks* — combining reproducible PowerShell automation with the flexible reasoning of modern AI tools.
 
-# Context as array of file paths
-$splatInvoke = @{
-    Prompt  = "Follow these guidelines"
-    Path    = "./script.ps1"
-    Context = @("./STYLE.md", "./EXAMPLES.md")
-}
-Invoke-AITool @splatInvoke
-
-# Context as FileInfo objects
-$contextFiles = Get-ChildItem ./docs/*.md
-Invoke-AITool -Prompt "Document this" -Path ./code.ps1 -Context $contextFiles
-```
-
-### Custom Tool Definitions
-
-Add your own AI tools without modifying the module:
-
-```powershell
-# Add your custom tool definition
-$script:ToolDefinitions['CustomTool'] = @{
-    Command         = "customtool"
-    InstallCommands = @{
-        Windows = "winget install CustomTool"
-        Linux   = "npm install -g customtool"
-        MacOS   = "brew install customtool"
-    }
-    TestCommand     = "customtool --version"
-    InitCommand     = "customtool login"
-    PermissionFlag  = "--auto-approve"
-    Model           = @{
-        Flag    = "--model"
-        Default = "default-model"
-    }
-    Verbose         = "--verbose"
-    Debug           = "--debug"
-    Priority        = 6
-}
-
-# The tool is now immediately available in all functions
-Install-AITool -Name CustomTool
-Set-AIToolDefault -Tool CustomTool
-```
-
-## Best Practices
-
-1. **Start Small**: Test with a few files before batch processing
-1. **Use Version Control**: Always commit before running AI modifications
-1. **Review Changes**: Manually review AI-generated changes
-1. **Context Files**: Provide style guides and examples for consistent results
-1. **File Size Limits**: Set appropriate `MaxFileSize` to avoid timeout issues
-1. **Permission Bypass**: Defaults to `$true` (enabled). Set to `$false` for a practically useless approval mode
-1. **Chat Mode**: Use chat mode (no -Path) for exploratory questions and design discussions
-1. **Reasoning Effort**: Use higher reasoning levels for complex architectural or algorithmic tasks
-
-## Troubleshooting
-
-### Tool Not Found
-```powershell
-# Verify installation
-Install-AITool -Name ClaudeCode -Verbose
-
-# Check if command exists
-Get-Command -Name claude -ErrorAction SilentlyContinue
-
-# Initialize tool after installation
-Initialize-AITool -Tool ClaudeCode
-```
-
-### No Default Tool Set
-```powershell
-# Error: "No tool specified and no default tool configured"
-# Solution: Set a default tool
-Set-AIToolDefault -AutoDetect
-
-# Or manually specify
-Set-AIToolDefault -Tool ClaudeCode
-```
-
-### Configuration Issues
-```powershell
-# View current settings
-Get-AIToolConfig -Tool ClaudeCode
-
-# Reset configuration
-Clear-AIToolConfig -Tool ClaudeCode
-```
+---
 
 ## Contributing
 
-Contributions are welcome! Please ensure:
+Pull requests are welcome!
 
 - Code follows PowerShell best practices
 - **ALL parameter passing uses splatting**
@@ -359,6 +229,4 @@ Contributions are welcome! Please ensure:
 - Changes are tested on Windows, Linux, and macOS
 - New tools can be added to `$ToolDefinitions` and are automatically available via dynamic parameter class mapping
 
-## License
-
-MIT
+---
