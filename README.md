@@ -8,9 +8,9 @@
 
 **Batch-process your code with popular AI CLI editors.**
 aitools is a PowerShell module for managing and automating *agentic CLI tools* such as
-[**Claude Code**](https://github.com/anthropics/claude-code), [**Aider**](https://github.com/Aider-AI/aider), [**Gemini CLI**](https://github.com/google-gemini/gemini-cli), [**GitHub Copilot CLI**](https://github.com/github/copilot-cli), and [**OpenAI Codex**](https://github.com/openai/codex).
+[**Claude Code**](https://github.com/anthropics/claude-code), [**Aider**](https://github.com/Aider-AI/aider), [**Gemini CLI**](https://github.com/google-gemini/gemini-cli), [**GitHub Copilot CLI**](https://github.com/github/copilot-cli), and more.
 
-Unlike API wrappers that just send prompts, these CLIs actually *read, understand, and rewrite your code* — and aitools wraps them to make them scriptable, and repeatable.
+Unlike API wrappers that just send prompts, these CLIs actually read, understand, and rewrite your code — and aitools wraps them to make them scriptable and repeatable.
 
 ---
 
@@ -35,7 +35,7 @@ Unlike API wrappers that just send prompts, these CLIs actually *read, understan
 
 You might be wondering why I published this when [PSOpenAI](https://github.com/mkht/PSOpenAI) exists. I love PSOpenAI — it's the best PowerShell wrapper for the OpenAI-compatible APIs.
 
-But it's built for **API interaction**, not **code transformation**. When you use agentic tools like Claude Code or GitHub Copilot CLI, they come with toolkits built in where as APIs are bare, as designed.
+But it's built for **API interaction**, not **code transformation**. When you use agentic tools like Claude Code or GitHub Copilot CLI, they come with toolkits built in whereas APIs are bare, as in they don't manage file I/O, diffs, and other editor behaviors.
 
 | PSOpenAI                                  | Agentic CLI Tools                              |
 | ----------------------------------------- | ---------------------------------------------- |
@@ -50,7 +50,7 @@ aitools orchestrates those CLIs with PowerShell's predictability, discoverabilit
 
 ## Why aitools?
 
-The reason I built aitools is so that I wouldn't have to repeatedly do `claude --help` and `gemini --help` when I need to figure out how to do something in the CLI. I looked up those just once and then wrapped PowerShell around it. I also don't want to figure out how to install or update each of them. Now I just use a singular command, `Update-AITool` to update all of my agentic CLIs.
+The reason I built aitools is so that I wouldn't have to repeatedly do `claude --help` and `gemini --help` when I need to figure out how to do something in the CLI. I looked up those just once and documented the steps.
 
 | Without aitools                           | With aitools                        |
 | ----------------------------------------- | ----------------------------------- |
@@ -59,7 +59,7 @@ The reason I built aitools is so that I wouldn't have to repeatedly do `claude -
 | Manually open each file and paste prompts | Batch process hundreds of files     |
 | Track local edits manually                | Automatic diff & patch management   |
 
-💡 **Purpose:** aitools brings *agentic AI* into your automation stack. Refactor, migrate, document, and standardize codebases at scale using the same workflows that PowerShell admins and developers already love.
+💡 **Purpose:** aitools brings *agentic AI* into your automation stack. Refactor, migrate, document, and standardize codebases at scale using the same workflows that PowerShell admins and developers use.
 
 ---
 
@@ -68,7 +68,7 @@ The reason I built aitools is so that I wouldn't have to repeatedly do `claude -
 Every aitools operation follows a predictable 3-step reasoning cycle:
 
 1. **Reasoning step** — Pass prompt + migration + style context to the selected AI CLI
-1. **Diff & validation** — Track and display exact edits for review or automated commit
+2. **Diff & validation** — Track and display exact edits for review or automated commit
 
 Example:
 
@@ -95,7 +95,7 @@ Set-AIToolDefault -Tool ClaudeCode
 Get-ChildItem tests\*.Tests.ps1 | Update-PesterTest
 ```
 
-✅ Supports: **Claude Code**, **Aider**, **Gemini CLI**, **GitHub Copilot CLI**, and **Codex CLI**<br/>
+✅ Supports: **Claude Code**, **Aider**, **Gemini CLI**, **GitHub Copilot CLI**, and **Codex CLI**
 🧠 Works on **Windows, Linux, and macOS**
 
 ---
@@ -135,7 +135,7 @@ Invoke-AITool -Tool Codex `
 
 ### ⚙️ SDK Upgrades (Example: BurntToast Module)
 
-Modules like [**BurntToast**](https://github.com/Windos/BurntToast), which wrap native Windows SDKs, evolve as the underlying APIs change — for example, migrating from the **Windows 10 Notification API** to the **Windows 11 adaptive toast model**.
+Modules like [**BurntToast**](https://github.com/Windos/BurntToast), which wrap native Windows SDKs, evolve as the underlying APIs change — for example, migrating from the **Windows 10 Notification** APIs to newer Windows 11 APIs.
 
 ```powershell
 # Modernize BurntToast module code to the latest Windows 11 SDK
