@@ -50,7 +50,7 @@ aitools orchestrates those CLIs with PowerShell's predictability, discoverabilit
 
 ## Why aitools?
 
-The reason I built aitools is so that I wouldn't have to repeatedly do `claude --help` and `gemini --help` when I need to figure out how to do something in the CLI. I looked up those just once and documented the steps.
+The reason I built aitools is so that I wouldn't have to repeatedly type `claude --help` and `gemini --help` when I need to figure out how to do something in the CLI. I looked up those just once and documented the steps.
 
 | Without aitools                           | With aitools                        |
 | ----------------------------------------- | ----------------------------------- |
