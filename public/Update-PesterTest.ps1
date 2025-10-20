@@ -76,7 +76,7 @@ function Update-PesterTest {
         [PSObject[]]$InputObject,
         [int]$First = 10000,
         [int]$Skip,
-        [int]$Limit = 5,
+        [int]$Limit = 10000,
         [string]$PromptFilePath = (Resolve-Path "$script:ModuleRoot/prompts/prompt.md" -ErrorAction SilentlyContinue).Path,
         [string[]]$ContextFilePath = @(
             (Resolve-Path "$script:ModuleRoot/prompts/style.md" -ErrorAction SilentlyContinue).Path,
@@ -297,11 +297,9 @@ function Update-PesterTest {
         $totalCommands = $commandsToProcess.Count
         Write-PSFMessage -Level Debug -Message "Processing $totalCommands test file(s) with $Tool..."
 
-        # Process each command
-        $currentCommand = 0
+        # Collect all valid file paths
+        [System.Collections.ArrayList]$filesToProcess = @()
         foreach ($command in $commandsToProcess) {
-            $currentCommand++
-
             # Determine file path
             if ($command.IsTestFile) {
                 $cmdName = $command.Name
@@ -325,7 +323,7 @@ function Update-PesterTest {
                 }
             }
 
-            Write-PSFMessage -Level Debug -Message "Processing command: $cmdName ($currentCommand/$totalCommands)"
+            Write-PSFMessage -Level Debug -Message "Validating test file: $cmdName"
             Write-PSFMessage -Level Verbose -Message "Test file path: $filename"
 
             # Validate file exists
@@ -341,80 +339,48 @@ function Update-PesterTest {
                 continue
             }
 
-            # Build prompt with command-specific information
-            $parameters = if ($command.Parameters) {
-                $command.Parameters.Values | Where-Object Name -notin $commonParameters
-            } else {
-                @()
-            }
-
-            $formattedFilename = $filename -replace '\\', '/'
-            $cmdPrompt = $promptTemplate -replace "--FILEPATH--", $formattedFilename
-            $cmdPrompt = $cmdPrompt -replace "--CMDNAME--", $cmdName
-            $cmdPrompt = $cmdPrompt -replace "--PARMZ--", ($parameters.Name -join "`n")
-
-            if ($PSCmdlet.ShouldProcess($filename, "Update Pester test to v5 format using $Tool")) {
-                # Build Invoke-AITool parameters
-                $invokeParams = @{
-                    Tool    = $Tool
-                    Prompt  = $cmdPrompt
-                    Path    = $filename
-                    Context = $validContextFiles
-                }
-
-                if ($Model) {
-                    $invokeParams.Model = $Model
-                }
-
-                if ($Raw) {
-                    $invokeParams.Raw = $true
-                }
-
-                Write-PSFMessage -Level Verbose -Message "Invoking $Tool to update test file"
-
-                # Start the AI tool as a background job using ThreadJob for Jupyter notebook compatibility
-                $job = Start-ThreadJob -Name $cmdName -ScriptBlock {
-                    param($invokeParams, $moduleRoot, $verbosePreference, $debugPreference)
-
-                    # Set preferences to match parent session
-                    $VerbosePreference = $verbosePreference
-                    $DebugPreference = $debugPreference
-
-                    # Import the module in the job
-                    Import-Module (Join-Path $moduleRoot "aitools.psd1") -Force -Verbose:$false
-
-                    # Execute Invoke-AITool
-                    Invoke-AITool @invokeParams
-                } -ArgumentList $invokeParams, $script:ModuleRoot, $VerbosePreference, $DebugPreference
-
-                # Track progress with elapsed time while job runs
-                $startTime = Get-Date
-                while ($job.State -in 'Running', 'NotStarted') {
-                    $elapsed = (Get-Date) - $startTime
-                    $elapsedString = "{0:00}:{1:00}:{2:00}" -f [Math]::Floor($elapsed.Hours), [Math]::Floor($elapsed.Minutes), [Math]::Floor($elapsed.Seconds)
-
-                    $progressParams = @{
-                        Activity        = "Refactoring with $Tool"
-                        Status          = "$cmdName ($currentCommand/$totalCommands) - Elapsed: $elapsedString"
-                        PercentComplete = ($currentCommand / $totalCommands) * 100
-                    }
-                    Write-Progress @progressParams
-
-                    Start-Sleep -Seconds 1
-                }
-
-                # Output the result object if one was returned, excluding RunspaceId
-                # In raw mode, Invoke-AITool returns early without creating a structured object
-                if (-not $Raw) {
-                    Receive-Job -Job $job -Wait -AutoRemoveJob | Select-Object -Property * -ExcludeProperty RunspaceId, PSComputerName, PSShowComputerName
-                } elseif ($Raw) {
-                    # In raw mode, just output whatever was returned without processing
-                    Receive-Job -Job $job -Wait -AutoRemoveJob
-                }
-            }
+            # Add to files to process
+            [void]$filesToProcess.Add($filename)
         }
 
-        Write-Progress -Activity "Refactoring with $Tool" -Completed
-        Write-PSFMessage -Level Debug -Message "Processing complete. Updated $totalCommands file(s)."
+        if ($filesToProcess.Count -eq 0) {
+            Write-PSFMessage -Level Warning -Message "No valid test files to process after filtering"
+            return
+        }
+
+        Write-PSFMessage -Level Verbose -Message "Collected $($filesToProcess.Count) test file(s) to process"
+
+        # Use a simplified prompt template without per-file placeholders
+        $genericPrompt = if ($promptTemplate) {
+            # Remove placeholder lines if they exist
+            $promptTemplate -replace '--FILEPATH--.*', '' -replace '--CMDNAME--.*', '' -replace '--PARMZ--.*', ''
+        } else {
+            "Update these Pester tests to v5 format"
+        }
+
+        # Build Invoke-AITool parameters for batch processing
+        $invokeParams = @{
+            Tool    = $Tool
+            Prompt  = $genericPrompt
+            Path    = $filesToProcess
+            Context = $validContextFiles
+        }
+
+        if ($Model) {
+            $invokeParams.Model = $Model
+        }
+
+        if ($Raw) {
+            $invokeParams.Raw = $true
+        }
+
+        Write-PSFMessage -Level Verbose -Message "Invoking $Tool to update $($filesToProcess.Count) test files"
+
+        # Call Invoke-AITool once with all files - it will handle progress display
+        if ($PSCmdlet.ShouldProcess("$($filesToProcess.Count) test files", "Update Pester tests to v5 format using $Tool")) {
+            Invoke-AITool @invokeParams
+        }
+
+        Write-PSFMessage -Level Debug -Message "Processing complete. Updated $($filesToProcess.Count) file(s)."
     }
 }
