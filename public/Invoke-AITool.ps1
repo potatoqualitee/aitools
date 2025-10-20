@@ -859,7 +859,6 @@ function Invoke-AITool {
                     Pop-Location
                     Write-PSFMessage -Level Verbose -Message "Restored location after processing file"
                 }
-                }
             }
         } # End of foreach ($singleFile in $filesToProcess)
 
