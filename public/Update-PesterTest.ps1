@@ -76,7 +76,7 @@ function Update-PesterTest {
         [PSObject[]]$InputObject,
         [int]$First = 10000,
         [int]$Skip,
-        [int]$Limit = 5,
+        [int]$Limit = 10000,
         [string]$PromptFilePath = (Resolve-Path "$script:ModuleRoot/prompts/prompt.md" -ErrorAction SilentlyContinue).Path,
         [string[]]$ContextFilePath = @(
             (Resolve-Path "$script:ModuleRoot/prompts/style.md" -ErrorAction SilentlyContinue).Path,
