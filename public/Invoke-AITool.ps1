@@ -550,10 +550,20 @@ function Invoke-AITool {
         Write-PSFMessage -Level Verbose -Message "Total files queued: $($filesToProcess.Count)"
 
         $fileIndex = 0
+        $totalFiles = $filesToProcess.Count
         foreach ($singleFile in $filesToProcess) {
             $fileIndex++
 
-            Write-PSFMessage -Level Debug -Message "Processing file $fileIndex of $($filesToProcess.Count): $singleFile"
+            Write-PSFMessage -Level Debug -Message "Processing file $fileIndex of $totalFiles: $singleFile"
+
+            # Show progress for file processing
+            $fileName = [System.IO.Path]::GetFileName($singleFile)
+            $progressParams = @{
+                Activity        = "Processing with $currentTool"
+                Status          = "$fileName ($fileIndex/$totalFiles)"
+                PercentComplete = ($fileIndex / $totalFiles) * 100
+            }
+            Write-Progress @progressParams
 
             # Build combined prompt with context files for non-Aider tools
             $fullPrompt = $promptText
@@ -851,6 +861,9 @@ function Invoke-AITool {
                 }
                 }
             }
+        } # End of foreach ($singleFile in $filesToProcess)
+
+        Write-Progress -Activity "Processing with $currentTool" -Completed
         } # End of foreach ($currentTool in $toolsToRun)
 
         Write-PSFMessage -Level Verbose -Message "All files processed"

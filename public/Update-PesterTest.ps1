@@ -372,6 +372,14 @@ function Update-PesterTest {
 
                 Write-PSFMessage -Level Verbose -Message "Invoking $Tool to update test file"
 
+                # Show progress for the overall batch operation
+                $progressParams = @{
+                    Activity        = "Refactoring with $Tool"
+                    Status          = "$cmdName ($currentCommand/$totalCommands)"
+                    PercentComplete = ($currentCommand / $totalCommands) * 100
+                }
+                Write-Progress @progressParams
+
                 # Start the AI tool as a background job using ThreadJob for Jupyter notebook compatibility
                 $job = Start-ThreadJob -Name $cmdName -ScriptBlock {
                     param($invokeParams, $moduleRoot, $verbosePreference, $debugPreference)
@@ -387,22 +395,7 @@ function Update-PesterTest {
                     Invoke-AITool @invokeParams
                 } -ArgumentList $invokeParams, $script:ModuleRoot, $VerbosePreference, $DebugPreference
 
-                # Track progress with elapsed time while job runs
-                $startTime = Get-Date
-                while ($job.State -in 'Running', 'NotStarted') {
-                    $elapsed = (Get-Date) - $startTime
-                    $elapsedString = "{0:00}:{1:00}:{2:00}" -f [Math]::Floor($elapsed.Hours), [Math]::Floor($elapsed.Minutes), [Math]::Floor($elapsed.Seconds)
-
-                    $progressParams = @{
-                        Activity        = "Refactoring with $Tool"
-                        Status          = "$cmdName ($currentCommand/$totalCommands) - Elapsed: $elapsedString"
-                        PercentComplete = ($currentCommand / $totalCommands) * 100
-                    }
-                    Write-Progress @progressParams
-
-                    Start-Sleep -Seconds 1
-                }
-
+                # Wait for job to complete
                 # Output the result object if one was returned, excluding RunspaceId
                 # In raw mode, Invoke-AITool returns early without creating a structured object
                 if (-not $Raw) {
