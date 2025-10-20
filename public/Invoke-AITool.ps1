@@ -554,7 +554,7 @@ function Invoke-AITool {
         foreach ($singleFile in $filesToProcess) {
             $fileIndex++
 
-            Write-PSFMessage -Level Debug -Message "Processing file $fileIndex of $totalFiles: $singleFile"
+            Write-PSFMessage -Level Debug -Message "Processing file $fileIndex of $totalFiles - $singleFile"
 
             # Show progress for file processing
             $fileName = [System.IO.Path]::GetFileName($singleFile)
