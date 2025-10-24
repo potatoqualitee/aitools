@@ -361,6 +361,20 @@ function Invoke-AITool {
                     }
                     New-CodexArgument @argumentParams
                 }
+                'Cursor' {
+                    $argumentParams = @{
+                        Message             = $fullPrompt
+                        Model               = $modelToUse
+                        ContextFiles        = $contextFiles
+                        UsePermissionBypass = $permissionBypass
+                        Verbose             = $VerbosePreference
+                        Debug               = $DebugPreference
+                    }
+                    if ($reasoningEffortToUse) {
+                        $argumentParams['ReasoningEffort'] = $reasoningEffortToUse
+                    }
+                    New-CursorArgument @argumentParams
+                }
             }
 
                 Write-PSFMessage -Level Verbose -Message "Executing chat mode: $($toolDef.Command) $($arguments -join ' ')"
@@ -469,6 +483,34 @@ function Invoke-AITool {
                     Remove-Item Env:PYTHONIOENCODING -ErrorAction SilentlyContinue
                 } elseif ($currentTool -eq 'Codex') {
                     Write-PSFMessage -Level Verbose -Message "Executing Codex in chat mode (prompt in arguments)"
+
+                    # Redirect to temp file instead of capturing directly
+                    & $toolDef.Command @arguments *>&1 | Out-File -FilePath $tempOutputFile -Encoding utf8
+
+                    # Read output from temp file
+                    $capturedOutput = Get-Content -Path $tempOutputFile -Raw -Encoding utf8
+                    Remove-Item -Path $tempOutputFile -Force -ErrorAction SilentlyContinue
+
+                    [PSCustomObject]@{
+                        FileName     = 'N/A (Chat Mode)'
+                        FullPath     = 'N/A (Chat Mode)'
+                        Tool         = $currentTool
+                        Model        = if ($modelToUse) { $modelToUse } else { 'Default' }
+                        Result       = $capturedOutput
+                        StartTime    = $startTime
+                        EndTime      = $endTime = Get-Date
+                        Duration     = [timespan]::FromSeconds([Math]::Floor(($endTime - $startTime).TotalSeconds))
+                        Success      = ($LASTEXITCODE -eq 0)
+                    }
+
+                    Write-PSFMessage -Level Verbose -Message "Tool exited with code: $LASTEXITCODE"
+                    if ($LASTEXITCODE -eq 0) {
+                        Write-PSFMessage -Level Verbose -Message "Chat mode completed successfully"
+                    } else {
+                        Write-PSFMessage -Level Error -Message "Chat mode failed (exit code $LASTEXITCODE)"
+                    }
+                } elseif ($currentTool -eq 'Cursor') {
+                    Write-PSFMessage -Level Verbose -Message "Executing Cursor in chat mode (prompt in arguments)"
 
                     # Redirect to temp file instead of capturing directly
                     & $toolDef.Command @arguments *>&1 | Out-File -FilePath $tempOutputFile -Encoding utf8
@@ -664,6 +706,21 @@ function Invoke-AITool {
                     }
                     New-CodexArgument @argumentParams
                 }
+                'Cursor' {
+                    $argumentParams = @{
+                        TargetFile          = $singleFile
+                        Message             = $promptText
+                        Model               = $modelToUse
+                        ContextFiles        = $contextFiles
+                        UsePermissionBypass = $permissionBypass
+                        Verbose             = $VerbosePreference
+                        Debug               = $DebugPreference
+                    }
+                    if ($reasoningEffortToUse) {
+                        $argumentParams['ReasoningEffort'] = $reasoningEffortToUse
+                    }
+                    New-CursorArgument @argumentParams
+                }
             }
 
             Write-PSFMessage -Level Verbose -Message "Executing: $($toolDef.Command) $($arguments -join ' ')"
@@ -785,6 +842,34 @@ function Invoke-AITool {
                     Remove-Item Env:PYTHONIOENCODING -ErrorAction SilentlyContinue
                 } elseif ($currentTool -eq 'Codex') {
                     Write-PSFMessage -Level Verbose -Message "Executing Codex (prompt in arguments)"
+
+                    # Redirect to temp file instead of capturing directly
+                    & $toolDef.Command @arguments *>&1 | Out-File -FilePath $tempOutputFile -Encoding utf8
+
+                    # Read output from temp file
+                    $capturedOutput = Get-Content -Path $tempOutputFile -Raw -Encoding utf8
+                    Remove-Item -Path $tempOutputFile -Force -ErrorAction SilentlyContinue
+
+                    [PSCustomObject]@{
+                        FileName     = [System.IO.Path]::GetFileName($singleFile)
+                        FullPath     = $singleFile
+                        Tool         = $currentTool
+                        Model        = if ($modelToUse) { $modelToUse } else { 'Default' }
+                        Result       = $capturedOutput
+                        StartTime    = $startTime
+                        EndTime      = $endTime = Get-Date
+                        Duration     = [timespan]::FromSeconds([Math]::Floor(($endTime - $startTime).TotalSeconds))
+                        Success      = ($LASTEXITCODE -eq 0)
+                    }
+
+                    Write-PSFMessage -Level Verbose -Message "Tool exited with code: $LASTEXITCODE"
+                    if ($LASTEXITCODE -eq 0) {
+                        Write-PSFMessage -Level Verbose -Message "Successfully processed: $singleFile"
+                    } else {
+                        Write-PSFMessage -Level Error -Message "Failed to process $singleFile (exit code $LASTEXITCODE)"
+                    }
+                } elseif ($currentTool -eq 'Cursor') {
+                    Write-PSFMessage -Level Verbose -Message "Executing Cursor (prompt in arguments)"
 
                     # Redirect to temp file instead of capturing directly
                     & $toolDef.Command @arguments *>&1 | Out-File -FilePath $tempOutputFile -Encoding utf8

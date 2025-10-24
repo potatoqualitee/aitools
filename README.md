@@ -8,7 +8,7 @@
 
 **Batch-process your code with popular AI CLI editors.**
 aitools is a PowerShell module for managing and automating *agentic CLI tools* such as
-[**Claude Code**](https://github.com/anthropics/claude-code), [**Aider**](https://github.com/Aider-AI/aider), [**Gemini CLI**](https://github.com/google-gemini/gemini-cli), [**GitHub Copilot CLI**](https://github.com/github/copilot-cli), and more.
+[**Claude Code**](https://github.com/anthropics/claude-code), [**Aider**](https://github.com/Aider-AI/aider), [**Cursor**](https://www.cursor.com), [**Gemini CLI**](https://github.com/google-gemini/gemini-cli), [**GitHub Copilot CLI**](https://github.com/github/copilot-cli), and more.
 
 Unlike API wrappers that just send prompts, these CLIs actually read, understand, and rewrite your code — and aitools wraps them to make them scriptable and repeatable.
 
@@ -18,7 +18,7 @@ Unlike API wrappers that just send prompts, these CLIs actually read, understand
 
 * [Wrapper vs Agentic CLI Tools](#wrapper-vs-agentic-cli-tools)
 * [Why aitools?](#why-aitools)
-* [How aitools Thinks](#how-aitools-thinks)
+* [Supported CLIs](#supported-clis)
 * [Execution Model](#execution-model)
 * [Tool Reasoning Profiles](#tool-reasoning-profiles)
 * [Quick Start](#quick-start)
@@ -57,9 +57,22 @@ The reason I built aitools is so that I wouldn't have to repeatedly type `claude
 | Remember CLI flags and install steps      | `Install-AITool -Name ClaudeCode`   |
 | Switch between five different CLIs        | One consistent PowerShell interface |
 | Manually open each file and paste prompts | Batch process hundreds of files     |
-| Track local edits manually                | Automatic diff & patch management   |
 
 💡 **Purpose:** aitools brings *agentic AI* into your automation stack. Refactor, migrate, document, and standardize codebases at scale using the same workflows that PowerShell admins and developers use.
+
+---
+
+## Supported CLIs
+
+| CLI | Pricing | Status |
+| --- | --- | --- |
+| **Claude Code** | Subscription required | ✅ Supported |
+| **Cursor AI** | Free tier available | ✅ Supported |
+| **GitHub Copilot** | Free tier available | ✅ Supported |
+| **Google Gemini** | Free tier available | ✅ Supported |
+| **Aider** | Free & paid tiers | ✅ Supported |
+| **Codex CLI** | Flat monthly rate | ✅ Supported |
+| **Ollama** | Free & open source | ✅ Supported |
 
 ---
 
@@ -67,8 +80,8 @@ The reason I built aitools is so that I wouldn't have to repeatedly type `claude
 
 Every aitools operation follows a predictable 3-step reasoning cycle:
 
-1. **Reasoning step** — Pass prompt + migration + style context to the selected AI CLI
-2. **Diff & validation** — Track and display exact edits for review or automated commit
+1. **Reasoning step** — Pass prompt + migration + style context
+2. **Diff & validation** — Track and display exact edits for review
 
 Example:
 
@@ -95,7 +108,7 @@ Set-AIToolDefault -Tool ClaudeCode
 Get-ChildItem tests\*.Tests.ps1 | Update-PesterTest
 ```
 
-✅ Supports: **Claude Code**, **Aider**, **Gemini CLI**, **GitHub Copilot CLI**, and **Codex CLI**
+✅ Supports: **Claude Code**, **Aider**, **Gemini CLI**, **GitHub Copilot CLI**, **Codex CLI**, and **Ollama**
 🧠 Works on **Windows, Linux, and macOS**
 
 ---
@@ -211,6 +224,7 @@ Each supported CLI has distinct reasoning characteristics.
 | **Gemini CLI**  | Lots of free calls, second best coder, huge context                                 | APIs are expensive once you get past the free call limit     |
 | **Copilot CLI** | Affordable                                     | Just released, basically an alpha CLI |
 | **Codex CLI**   | Fast, flat monthly rate                                               | No idea why people like its coding     |
+| **Ollama**      | Completely free, runs locally, no API key required, great for offline use  | Models vary in quality, slower than cloud-based solutions    |
 
 aitools lets you combine them — even run all in comparison mode — for multi-agent reasoning. Or just make your preferred agent more accessible, like I do.
 

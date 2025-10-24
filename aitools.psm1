@@ -166,12 +166,58 @@ $script:ToolDefinitions = @{
         Debug             = 'RUST_LOG=debug'
         Priority          = 2
     }
+    'Cursor' = @{
+        Command           = 'cursor-agent'
+        InstallCommands   = @{
+            Windows = 'Write-Host "⚠️ Native Windows install not supported. Please use WSL or Linux/macOS."'
+            Linux   = 'curl https://cursor.com/install -fsSL | bash'
+            MacOS   = 'curl https://cursor.com/install -fsSL | bash'
+        }
+        UninstallCommands = @{
+            Windows = $null
+            Linux   = $null
+            MacOS   = $null
+        }
+        TestCommand       = 'cursor-agent --version'
+        InitCommand       = 'cursor-agent login'
+        PermissionFlag    = '--approve-mcps'
+        Model             = @{
+            Flag    = '--model'
+            Default = 'gpt-5'
+        }
+        Verbose           = '-v'
+        Debug             = $null
+        Priority          = 6
+    }
+    'Ollama' = @{
+        Command           = 'ollama'
+        InstallCommands   = @{
+            Windows = 'winget install ollama.ollama'
+            Linux   = 'curl -fsSL https://ollama.com/install.sh | sh'
+            MacOS   = 'brew install ollama'
+        }
+        UninstallCommands = @{
+            Windows = 'winget uninstall ollama.ollama'
+            Linux   = $null
+            MacOS   = 'brew uninstall ollama'
+        }
+        TestCommand       = 'ollama --version'
+        InitCommand       = 'ollama serve'
+        PermissionFlag    = $null
+        Model             = @{
+            Flag    = ''          # Ollama uses positional model name, not a flag
+            Default = 'llama3.1'
+        }
+        Verbose           = '-v'
+        Debug             = $null
+        Priority          = 5
+    }
 }
 
 # Define TEPP scriptblock
 $teppScriptBlockParams = @{
     Name        = 'Tool'
-    ScriptBlock = { 'All', 'Aider', 'Gemini', 'ClaudeCode', 'Codex', 'GitHubCopilot' }
+    ScriptBlock = { 'All', 'Aider', 'Gemini', 'ClaudeCode', 'Codex', 'GitHubCopilot', 'Cursor', 'Ollama' }
 }
 Register-PSFTeppScriptblock @teppScriptBlockParams
 
