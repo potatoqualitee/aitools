@@ -26,6 +26,7 @@ Unlike API wrappers that just send prompts, these CLIs actually read, understand
 * [Installation](#installation)
 * [Advanced Usage](#advanced-usage)
 * [Demo Walkthrough](#demo-walkthrough)
+* [Real-World Case Study: Updating dbatools.io Blog](#real-world-case-study-updating-dbatoolsio-blog)
 * [Contributing](#contributing)
 * [License](#license)
 
@@ -241,6 +242,66 @@ It demonstrates how aitools coordinates *agentic CLIs* through three stages of r
 
 It highlights how Claude achieved ~80% automation accuracy, with remaining fixes due to legacy code quality.
 The notebook illustrates *how aitools thinks* — combining reproducible PowerShell automation with the flexible reasoning of modern AI tools.
+
+---
+
+## Real-World Case Study: Updating dbatools.io Blog
+
+A concrete example of aitools' power came from updating the [dbatools.io blog](https://dbatools.io) — a technical blog with years of posts about SQL Server automation. The blog needed systematic updates: broken links, outdated Twitter embeds, deprecated commands, and old PowerShell screenshots that should be converted to a modern format.
+
+### The Challenge
+
+The task required **nuanced judgment**, not mechanical find-replace:
+
+- Posts are historical documents capturing what was true at the time
+- Updates should fix genuine problems (broken links, wrong info) not stylistic preferences
+- Twitter/X content needed removal while preserving context
+- PowerShell screenshots should be converted to a `{{< powershell-console >}}` Hugo shortcode
+- Code examples with 4+ parameters should consider splatting (but only when appropriate)
+- Links to deprecated dbatools commands needed updating
+- Technical accuracy required understanding ongoing practices vs. historical facts
+
+### The Solution
+
+Using Claude Code through aitools, the blog was batch-processed with a comprehensive audit prompt. The prompt (detailed in context) encoded:
+
+- **CONTEXT**: dbatools maintains backward compatibility (PS 3+, SQL Server 2000+), current year is 2025
+- **IMPORTANT**: This task requires nuance — preserve author voice, historical context, and intentional simplifications
+- **CHECK AND FIX**: Frontmatter updates, link validation, Twitter/X removal, code modernization, screenshot conversion
+- **PRESERVE**: Original writing style, all T-SQL code, working code, historical perspective
+
+### The Process
+
+```powershell
+# Set default tool
+Set-AIToolDefault -Tool ClaudeCode
+
+# Process blog posts with the audit prompt
+Get-ChildItem *.md | Invoke-AITool -Prompt ./update-blog.md
+```
+
+### The Results
+
+Claude Code processed each blog post, exercising judgment throughout:
+
+- **Links**: Tested and replaced dead links, updated Microsoft Docs URLs to current paths
+- **Twitter/X**: Removed embeds and converted to paraphrased statements ("Jeffrey Snover once noted that...")
+- **Screenshots**: Extracted PowerShell commands/output from images and converted to the `{{< powershell-console >}}` shortcode format
+- **Code**: Converted appropriate multi-parameter commands to splatting (skipping casual demos where splatting would reduce clarity)
+- **Commands**: Updated deprecated references (e.g., `Connect-DbaSqlInstance` → `Connect-DbaInstance`)
+- **Historical Content**: Preserved version numbers, download counts, and time-specific milestones as historical facts
+- **Ongoing Practices**: Updated content about code signing, security processes, and team operations
+
+### Key Insight
+
+This wasn't a simple "update all the things" job. It required an AI agent that could:
+
+- **Read and understand** a 300-line prompt with nested instructions and exceptions
+- **Exercise judgment** about what to change vs. preserve
+- **Maintain context** across hundreds of files
+- **Make nuanced decisions** about when splatting improves readability vs. when it's overkill
+
+This is exactly what *agentic CLIs* excel at — and what aitools makes scriptable and repeatable.
 
 ---
 
