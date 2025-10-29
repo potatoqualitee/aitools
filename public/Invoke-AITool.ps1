@@ -131,20 +131,42 @@ function Invoke-AITool {
             Write-PSFMessage -Level Verbose -Message "Validated $($Attachment.Count) attachment(s)"
         }
 
-        # Process Prompt parameter - detect if it's a file object or string
+        # Process Prompt parameter - detect if it's a file object, file path, file pattern, or string
         $promptText = if ($Prompt -is [System.IO.FileInfo] -or $Prompt -is [System.IO.FileSystemInfo]) {
             Write-PSFMessage -Level Verbose -Message "Prompt is a file object: $($Prompt.FullName)"
             if (Test-Path $Prompt.FullName) {
-                Get-Content $Prompt.FullName -Raw
+                $content = Get-Content $Prompt.FullName -Raw
+                # Append file path to content
+                "$content`n`n(File: $($Prompt.FullName))"
             } else {
                 Stop-PSFFunction -Message "Prompt file not found: $($Prompt.FullName)" -EnableException $true
                 return
             }
         } elseif ($Prompt -is [string]) {
+            # Check if it's a file pattern (contains wildcards)
+            if ($Prompt -match '[\*\?]') {
+                Write-PSFMessage -Level Verbose -Message "Prompt appears to be a file pattern: $Prompt"
+                $matchedFiles = Get-ChildItem -Path $Prompt -File -ErrorAction SilentlyContinue
+
+                if ($matchedFiles) {
+                    Write-PSFMessage -Level Verbose -Message "Found $($matchedFiles.Count) file(s) matching pattern: $Prompt"
+                    # Combine content from all matched files
+                    $combinedContent = ($matchedFiles | ForEach-Object {
+                        $fileContent = Get-Content $_.FullName -Raw
+                        "$fileContent`n`n(File: $($_.FullName))"
+                    }) -join "`n`n---`n`n"
+                    $combinedContent
+                } else {
+                    Write-PSFMessage -Level Verbose -Message "No files matched pattern, treating as plain string"
+                    $Prompt
+                }
+            }
             # Check if it's a file path
-            if ((Test-Path $Prompt -ErrorAction SilentlyContinue) -and -not (Test-Path $Prompt -PathType Container)) {
+            elseif ((Test-Path $Prompt -ErrorAction SilentlyContinue) -and -not (Test-Path $Prompt -PathType Container)) {
                 Write-PSFMessage -Level Verbose -Message "Prompt is a file path: $Prompt"
-                Get-Content $Prompt -Raw
+                $content = Get-Content $Prompt -Raw
+                # Append file path to content
+                "$content`n`n(File: $Prompt)"
             } else {
                 Write-PSFMessage -Level Verbose -Message "Prompt is a plain string"
                 $Prompt
