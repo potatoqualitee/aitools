@@ -78,6 +78,7 @@ function Invoke-AITool {
         [Alias('FullName')]
         [string[]]$Path,
         [Parameter()]
+        [Alias('Instructions')]
         [object[]]$Context,
         [Parameter()]
         [string]$Model,
