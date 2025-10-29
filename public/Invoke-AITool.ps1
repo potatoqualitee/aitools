@@ -13,6 +13,8 @@ function Invoke-AITool {
     .PARAMETER Prompt
         The instruction/prompt for the AI tool. Can be a string or a FileInfo object from Get-ChildItem.
         If a file is provided, its content will be read automatically.
+        If omitted, defaults to "Convert this file according to the instructions."
+        The file path will be automatically injected into the prompt if not detected.
 
     .PARAMETER Path
         File path(s) to process. Accepts pipeline input. Optional - if omitted, enters chat-only mode.
@@ -38,6 +40,10 @@ function Invoke-AITool {
 
     .EXAMPLE
         Get-ChildItem *.Tests.ps1 | Invoke-AITool -Prompt "Refactor from Pester v4 to v5"
+
+    .EXAMPLE
+        Get-ChildItem *.md | Invoke-AITool -Context "prompts\wordpress-to-hugo.md"
+        Uses the default prompt with instructions from the context file. File paths are auto-injected.
 
     .EXAMPLE
         Invoke-AITool -Path "MyFile.ps1" -Prompt "Add help documentation" -Tool ClaudeCode -Verbose
@@ -67,7 +73,6 @@ function Invoke-AITool {
         [Parameter()]
         [Alias('Name')]
         [string]$Tool,
-        [Parameter(Mandatory)]
         [object]$Prompt,
         [Parameter(ValueFromPipeline, ValueFromPipelineByPropertyName)]
         [Alias('FullName')]
@@ -89,6 +94,12 @@ function Invoke-AITool {
         # Save original location for cleanup in finally block
         $script:originalLocation = Get-Location
         Write-PSFMessage -Level Verbose -Message "Saved original location: $script:originalLocation"
+
+        # Set default prompt if none provided
+        if (-not $Prompt) {
+            $Prompt = "Convert this file according to the instructions."
+            Write-PSFMessage -Level Verbose -Message "No prompt provided, using default: $Prompt"
+        }
 
         # Validate Attachment parameter - only Codex supports attachments
         if ($Attachment) {
@@ -609,7 +620,19 @@ function Invoke-AITool {
 
             # Build combined prompt with context files for non-Aider tools
             $fullPrompt = $promptText
-                if ($currentTool -ne 'Aider' -and $contextFiles.Count -gt 0) {
+
+            # Auto-inject file path into prompt if not already present
+            $fileNameOnly = [System.IO.Path]::GetFileName($singleFile)
+            $hasFileReference = $fullPrompt -match [regex]::Escape($singleFile) -or
+                                $fullPrompt -match [regex]::Escape($fileNameOnly) -or
+                                $fullPrompt -match '\$file'
+
+            if (-not $hasFileReference) {
+                Write-PSFMessage -Level Verbose -Message "File path not detected in prompt, injecting it"
+                $fullPrompt += "`n`nTARGET FILE TO EDIT: $singleFile`nEDIT THIS FILE AND WRITE IT TO DISK."
+            }
+
+            if ($currentTool -ne 'Aider' -and $contextFiles.Count -gt 0) {
                 Write-PSFMessage -Level Verbose -Message "Building combined prompt with $($contextFiles.Count) context file(s)"
                 foreach ($ctxFile in $contextFiles) {
                     if (Test-Path $ctxFile) {
