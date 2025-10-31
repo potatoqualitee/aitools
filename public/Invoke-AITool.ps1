@@ -146,7 +146,7 @@ function Invoke-AITool {
             # Check if it's a file pattern (contains wildcards)
             if ($Prompt -match '[\*\?]') {
                 Write-PSFMessage -Level Verbose -Message "Prompt appears to be a file pattern: $Prompt"
-                $matchedFiles = Get-ChildItem -Path $Prompt -File -ErrorAction SilentlyContinue
+                $matchedFiles = Get-ChildItem -Path $Prompt -ErrorAction SilentlyContinue | Where-Object $false -eq PSIsContainer
 
                 if ($matchedFiles) {
                     Write-PSFMessage -Level Verbose -Message "Found $($matchedFiles.Count) file(s) matching pattern: $Prompt"
