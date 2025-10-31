@@ -75,7 +75,7 @@ function Invoke-AITool {
         [string]$Tool,
         [object]$Prompt,
         [Parameter(ValueFromPipeline, ValueFromPipelineByPropertyName)]
-        [Alias('FullName')]
+        [Alias('FullName', 'File', 'FilePath')]
         [string[]]$Path,
         [Parameter()]
         [Alias('Instructions')]
