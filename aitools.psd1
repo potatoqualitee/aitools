@@ -63,7 +63,10 @@
             Tags         = @('AI', 'CLI', 'Claude', 'Aider', 'Gemini', 'Copilot', 'Codex', 'Automation', 'CodeGeneration')
 
             # The web address of an icon which can be used in galleries to represent this module
-            IconUri      = ""
+            IconUri      = "https://raw.githubusercontent.com/potatoqualitee/aitools/main/logo.png"
+
+            # The web address of the project site
+            ProjectUri   = "https://github.com/potatoqualitee/aitools"
 
             # Indicates this is a pre-release/testing version of the module.
             IsPrerelease = 'False'
