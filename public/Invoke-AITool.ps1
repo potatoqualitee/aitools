@@ -642,17 +642,31 @@ function Invoke-AITool {
             Write-Progress @progressParams
 
             # Build combined prompt with context files for non-Aider tools
-            $fullPrompt = $promptText
+            # For GitHub Copilot, use @ prefix to tell it to read files directly
+            if ($currentTool -eq 'GitHubCopilot') {
+                # Check if the prompt was originally a file path (has the "(File: ...)" suffix)
+                if ($promptText -match '\(File: (.+)\)$') {
+                    # Extract the original prompt file path
+                    $promptFilePath = $Matches[1]
+                    # Use @ prefix for both files, with explicit instruction about which file to edit
+                    $fullPrompt = "Read the instructions from @$promptFilePath and apply them to @$singleFile. Edit and save the changes to $singleFile."
+                } else {
+                    # Prompt is plain text, so just include the target file with @ prefix
+                    $fullPrompt = "@$singleFile`n`n$promptText"
+                }
+            } else {
+                $fullPrompt = $promptText
 
-            # Auto-inject file path into prompt if not already present
-            $fileNameOnly = [System.IO.Path]::GetFileName($singleFile)
-            $hasFileReference = $fullPrompt -match [regex]::Escape($singleFile) -or
-                                $fullPrompt -match [regex]::Escape($fileNameOnly) -or
-                                $fullPrompt -match '\$file'
+                # Auto-inject file path into prompt if not already present (for other tools)
+                $fileNameOnly = [System.IO.Path]::GetFileName($singleFile)
+                $hasFileReference = $fullPrompt -match [regex]::Escape($singleFile) -or
+                                    $fullPrompt -match [regex]::Escape($fileNameOnly) -or
+                                    $fullPrompt -match '\$file'
 
-            if (-not $hasFileReference) {
-                Write-PSFMessage -Level Verbose -Message "File path not detected in prompt, injecting it"
-                $fullPrompt += "`n`nTARGET FILE TO EDIT: $singleFile`nEDIT THIS FILE AND WRITE IT TO DISK."
+                if (-not $hasFileReference) {
+                    Write-PSFMessage -Level Verbose -Message "File path not detected in prompt, injecting it"
+                    $fullPrompt += "`n`nTARGET FILE TO EDIT: $singleFile`nEDIT THIS FILE AND WRITE IT TO DISK."
+                }
             }
 
             if ($currentTool -ne 'Aider' -and $contextFiles.Count -gt 0) {
@@ -769,9 +783,7 @@ function Invoke-AITool {
                 }
             }
 
-            Write-PSFMessage -Level Verbose -Message "Executing: $($toolDef.Command) $($arguments -join ' ')"
-
-            Write-PSFMessage -Level Verbose -Message "Big prompt: $fullPrompt"
+            Write-PSFMessage -Level Verbose -Message "Final prompt sent to $currentTool :`n$fullPrompt"
 
             # Change to target file's directory to resolve workspace permission issues
             $targetDirectory = Split-Path $singleFile -Parent

@@ -48,6 +48,14 @@ function New-CopilotArgument {
 
     if ($Message) {
         Write-PSFMessage -Level Verbose -Message "Adding message prompt"
+
+        # For file editing, prepend the target file reference at the very beginning
+        # so Copilot knows which file to edit before reading the instructions
+        if ($TargetFile) {
+            $Message = "@$TargetFile`n`n$Message"
+            Write-PSFMessage -Level Verbose -Message "Prepended target file to message: @$TargetFile"
+        }
+
         $arguments += '-p', $Message
     }
 
