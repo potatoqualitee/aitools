@@ -260,7 +260,7 @@ function Invoke-AITool {
                 # Normalize path to use forward slashes for cross-platform CLI compatibility
                 $normalizedPath = $resolvedPath.Path -replace '\\', '/'
                 $filesToProcess += $normalizedPath
-                Write-PSFMessage -Level Verbose -Message "Queued file: $normalizedPath"
+                Write-PSFMessage -Level Debug -Message "Queued file: $normalizedPath"
             } else {
                 Write-PSFMessage -Level Warning -Message "File not found: $file"
             }
