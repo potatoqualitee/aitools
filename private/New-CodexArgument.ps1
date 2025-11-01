@@ -30,9 +30,15 @@ function New-CodexArgument {
     }
 
     if ($UsePermissionBypass) {
-        Write-PSFMessage -Level Verbose -Message "Using full-auto mode"
-        $arguments += '--full-auto'
-        $arguments += '--sandbox', 'workspace-write'
+        Write-PSFMessage -Level Verbose -Message "Using full-auto mode with bypass"
+        # Note: --full-auto is supposed to set --sandbox workspace-write automatically,
+        # but in practice it still defaults to read-only mode. Instead, we use
+        # --dangerously-bypass-approvals-and-sandbox which:
+        #   - Skips all confirmation prompts
+        #   - Removes sandbox restrictions entirely
+        #   - Allows direct file writes
+        # This is safe for batch processing in git repositories where you have backups.
+        $arguments += '--dangerously-bypass-approvals-and-sandbox'
     } else {
         Write-PSFMessage -Level Verbose -Message "Using auto-edit mode"
         $arguments += '--auto-edit'
@@ -70,11 +76,15 @@ function New-CodexArgument {
         # Extract just the filename for the prompt
         $fileName = Split-Path $TargetFile -Leaf
 
-        # Combine the message with the file reference
+        # Codex exec needs explicit instruction to read and edit the file
+        # The full prompt with context and instructions should already be in $Message
         $fullMessage = if ($Message) {
-            "$Message`n`nTarget file: $fileName"
+            # Message already contains the full prompt with context and instructions
+            # Just ensure the filename is clear
+            "$Message`n`nEDIT AND SAVE: $fileName"
         } else {
-            $fileName
+            # Fallback if no message provided
+            "Read, edit and save the file: $fileName"
         }
 
         Write-PSFMessage -Level Verbose -Message "Adding combined prompt with file reference"

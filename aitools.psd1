@@ -9,7 +9,7 @@
     RootModule        = 'aitools.psm1'
 
     # Version number of this module.
-    ModuleVersion     = '1.0.1'
+    ModuleVersion     = '1.0.2'
 
     # ID used to uniquely identify this module
     GUID              = 'c90f5001-c492-4fbe-8ab3-f03599951bd0'
@@ -43,6 +43,7 @@
         'Install-AITool',
         'Initialize-AITool',
         'Invoke-AITool',
+        'Remove-AIToolConfig',
         'Set-AIToolConfig',
         'Set-AIToolDefault',
         'Uninstall-AITool',
