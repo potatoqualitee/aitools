@@ -37,7 +37,10 @@ function Install-AITool {
         [string]$Name,
 
         [Parameter()]
-        [switch]$SkipInitialization
+        [switch]$SkipInitialization,
+
+        [Parameter()]
+        [switch]$SuppressAlreadyInstalledWarning
     )
 
     begin {
@@ -72,28 +75,34 @@ function Install-AITool {
             Write-Progress -Activity "Installing $currentToolName" -Status "Checking if $currentToolName is already installed" -PercentComplete 10
         Write-PSFMessage -Level Verbose -Message "Checking if $currentToolName is already installed"
         if (Test-Command -Command $tool.Command) {
-            $version = & $tool.Command --version 2>&1 | Select-Object -First 1
-            Write-PSFMessage -Level Output -Message "$currentToolName is already installed (version: $($version.Trim()))"
-            Write-PSFMessage -Level Output -Message "Skipping installation. To reinstall, first run: Uninstall-AITool -Name $currentToolName"
+            # If SuppressAlreadyInstalledWarning is set, we're being called from Update-AITool
+            # so we should continue with installation/update instead of returning early
+            if (-not $SuppressAlreadyInstalledWarning) {
+                $version = & $tool.Command --version 2>&1 | Select-Object -First 1
+                Write-PSFMessage -Level Output -Message "$currentToolName is already installed (version: $($version.Trim()))"
+                Write-PSFMessage -Level Output -Message "Skipping installation. To reinstall, first run: Uninstall-AITool -Name $currentToolName"
 
-            # Get the full path to the command
-            $commandPath = (Get-Command $tool.Command -ErrorAction SilentlyContinue).Source
-            if (-not $commandPath) {
-                $commandPath = (Get-Command $tool.Command -ErrorAction SilentlyContinue).Path
-            }
+                # Get the full path to the command
+                $commandPath = (Get-Command $tool.Command -ErrorAction SilentlyContinue).Source
+                if (-not $commandPath) {
+                    $commandPath = (Get-Command $tool.Command -ErrorAction SilentlyContinue).Path
+                }
 
                 Write-Progress -Activity "Installing $currentToolName" -Completed
 
-            # Output existing installation details
-            [PSCustomObject]@{
-                PSTypeName = 'AITools.InstallResult'
-                Tool       = $currentToolName
-                Result     = 'Success'
-                Version    = ($version -replace '^.*?(\d+\.\d+\.\d+).*$', '$1').Trim()
-                Path       = $commandPath
-                Installer  = 'Already Installed'
+                # Output existing installation details
+                [PSCustomObject]@{
+                    PSTypeName = 'AITools.InstallResult'
+                    Tool       = $currentToolName
+                    Result     = 'Success'
+                    Version    = ($version -replace '^.*?(\d+\.\d+\.\d+).*$', '$1').Trim()
+                    Path       = $commandPath
+                    Installer  = 'Already Installed'
+                }
+                return
+            } else {
+                Write-PSFMessage -Level Verbose -Message "$currentToolName is already installed, proceeding with update check..."
             }
-            return
         }
 
             Write-Progress -Activity "Installing $currentToolName" -Status "Getting installation command for $os" -PercentComplete 15

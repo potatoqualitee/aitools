@@ -93,15 +93,15 @@ function Update-AITool {
                         Write-PSFMessage -Level Verbose -Message "Current version: $oldVersion"
                     }
 
-                    # Install/Update the tool (pass through SkipInitialization)
-                    $installResult = Install-AITool -Name $toolName -SkipInitialization
+                    # Install/Update the tool (pass through SkipInitialization and suppress warnings)
+                    $installResult = Install-AITool -Name $toolName -SkipInitialization -SuppressAlreadyInstalledWarning
 
                     # Output UpdateResult with old version
                     if ($installResult) {
                         [PSCustomObject]@{
                             PSTypeName = 'AITools.UpdateResult'
                             Name       = $installResult.Tool
-                            OldVersion = ($oldVersion).Trim()
+                            OldVersion = if ($oldVersion) { $oldVersion.Trim() } else { 'N/A' }
                             Version    = $installResult.Version
                             Path       = $installResult.Path
                         }
