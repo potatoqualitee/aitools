@@ -194,78 +194,155 @@ function Install-AITool {
                     $commandIndex++
                     Write-PSFMessage -Level Verbose -Message "Executing command $commandIndex of $($installCmd.Count): $cmd"
 
-                    # Use Start-Process to reliably capture both stdout and stderr
-                    # Split the command into executable and arguments
-                    $cmdParts = $cmd -split ' ', 2
-                    $executable = $cmdParts[0]
-                    $arguments = if ($cmdParts.Count -gt 1) { $cmdParts[1] } else { '' }
+                    # Check if command contains shell operators (pipes, redirects, etc.)
+                    # These require shell execution and can't be handled by Start-Process
+                    $requiresShell = $cmd -match '[|&><]|&&|\|\||iex|Invoke-Expression'
 
-                    Write-PSFMessage -Level Verbose -Message "Executable: $executable"
-                    Write-PSFMessage -Level Verbose -Message "Arguments: $arguments"
+                    if ($requiresShell) {
+                        Write-PSFMessage -Level Verbose -Message "Command contains shell operators, using shell execution"
 
-                    # Resolve the executable path using Get-Command (handles .cmd, .exe, etc. on Windows)
-                    $resolvedExecutable = $null
-                    try {
-                        # Get all available commands with this name
-                        $allCommands = @(Get-Command $executable -All -ErrorAction Stop)
+                        # Use appropriate shell based on OS
+                        if ($os -eq 'Windows') {
+                            # On Windows, use PowerShell for commands with iex/Invoke-Expression
+                            if ($cmd -match 'iex|Invoke-Expression') {
+                                Write-PSFMessage -Level Verbose -Message "Executing via Invoke-Expression"
+                                Invoke-Expression $cmd
+                                $exitCode = $LASTEXITCODE
+                                if (-not $exitCode) { $exitCode = 0 }
+                            } else {
+                                # Use cmd.exe for other shell operators
+                                Write-PSFMessage -Level Verbose -Message "Executing via cmd.exe"
+                                $psi = New-Object System.Diagnostics.ProcessStartInfo
+                                $psi.FileName = 'cmd.exe'
+                                $psi.Arguments = "/c $cmd"
+                                $psi.RedirectStandardOutput = $true
+                                $psi.RedirectStandardError = $true
+                                $psi.UseShellExecute = $false
+                                $psi.CreateNoWindow = $true
 
-                        # Prefer executables in this order: .exe, .cmd, .bat, then others
-                        # Exclude .ps1 files as they can't be run directly by ProcessStartInfo
-                        $preferredExtensions = @('.exe', '.cmd', '.bat', '')
-                        $selectedCommand = $null
+                                $process = New-Object System.Diagnostics.Process
+                                $process.StartInfo = $psi
+                                $process.Start() | Out-Null
 
-                        foreach ($ext in $preferredExtensions) {
-                            $selectedCommand = $allCommands | Where-Object {
-                                $_.Source -and (
-                                    ($ext -eq '' -and -not $_.Source.EndsWith('.ps1')) -or
-                                    $_.Source.EndsWith($ext)
-                                )
-                            } | Select-Object -First 1
-                            if ($selectedCommand) { break }
-                        }
+                                $stdout = $process.StandardOutput.ReadToEnd()
+                                $stderr = $process.StandardError.ReadToEnd()
+                                $process.WaitForExit()
+                                $exitCode = $process.ExitCode
 
-                        if ($selectedCommand) {
-                            $resolvedExecutable = $selectedCommand.Source
-                            if (-not $resolvedExecutable) {
-                                $resolvedExecutable = $selectedCommand.Path
+                                if ($stdout) {
+                                    $stdout -split "`n" | Where-Object { $_.Trim() } | ForEach-Object { $trimmed = $_.Trim(); if ($trimmed) { Write-PSFMessage -Level Verbose -Message $trimmed } }
+                                }
+                                if ($stderr) {
+                                    $stderr -split "`n" | Where-Object { $_.Trim() } | ForEach-Object { $trimmed = $_.Trim(); if ($trimmed) { Write-PSFMessage -Level Verbose -Message $trimmed } }
+                                }
                             }
-                            Write-PSFMessage -Level Verbose -Message "Resolved executable: $resolvedExecutable"
                         } else {
-                            # Fallback to original executable name
-                            $resolvedExecutable = $executable
-                            Write-PSFMessage -Level Verbose -Message "No suitable executable found, using: $resolvedExecutable"
+                            # On Unix, use bash or sh
+                            Write-PSFMessage -Level Verbose -Message "Executing via shell"
+                            $shellCmd = if (Test-Path '/bin/bash') { '/bin/bash' } else { '/bin/sh' }
+
+                            $psi = New-Object System.Diagnostics.ProcessStartInfo
+                            $psi.FileName = $shellCmd
+                            $psi.Arguments = "-c `"$cmd`""
+                            $psi.RedirectStandardOutput = $true
+                            $psi.RedirectStandardError = $true
+                            $psi.UseShellExecute = $false
+                            $psi.CreateNoWindow = $true
+
+                            $process = New-Object System.Diagnostics.Process
+                            $process.StartInfo = $psi
+                            $process.Start() | Out-Null
+
+                            $stdout = $process.StandardOutput.ReadToEnd()
+                            $stderr = $process.StandardError.ReadToEnd()
+                            $process.WaitForExit()
+                            $exitCode = $process.ExitCode
+
+                            if ($stdout) {
+                                $stdout -split "`n" | Where-Object { $_.Trim() } | ForEach-Object { $trimmed = $_.Trim(); if ($trimmed) { Write-PSFMessage -Level Verbose -Message $trimmed } }
+                            }
+                            if ($stderr) {
+                                $stderr -split "`n" | Where-Object { $_.Trim() } | ForEach-Object { $trimmed = $_.Trim(); if ($trimmed) { Write-PSFMessage -Level Verbose -Message $trimmed } }
+                            }
                         }
-                    } catch {
-                        # If Get-Command fails, use the original executable name
-                        $resolvedExecutable = $executable
-                        Write-PSFMessage -Level Verbose -Message "Could not resolve executable path, using: $resolvedExecutable"
-                    }
 
-                    $psi = New-Object System.Diagnostics.ProcessStartInfo
-                    $psi.FileName = $resolvedExecutable
-                    $psi.Arguments = $arguments
-                    $psi.RedirectStandardOutput = $true
-                    $psi.RedirectStandardError = $true
-                    $psi.UseShellExecute = $false
-                    $psi.CreateNoWindow = $true
+                        $outputText = "$stdout`n$stderr"
+                    } else {
+                        # Simple command without shell operators - use Start-Process directly
+                        Write-PSFMessage -Level Verbose -Message "Simple command, using Start-Process"
 
-                    $process = New-Object System.Diagnostics.Process
-                    $process.StartInfo = $psi
-                    $process.Start() | Out-Null
+                        # Split the command into executable and arguments
+                        $cmdParts = $cmd -split ' ', 2
+                        $executable = $cmdParts[0]
+                        $arguments = if ($cmdParts.Count -gt 1) { $cmdParts[1] } else { '' }
 
-                    $stdout = $process.StandardOutput.ReadToEnd()
-                    $stderr = $process.StandardError.ReadToEnd()
-                    $process.WaitForExit()
+                        Write-PSFMessage -Level Verbose -Message "Executable: $executable"
+                        Write-PSFMessage -Level Verbose -Message "Arguments: $arguments"
 
-                    $exitCode = $process.ExitCode
-                    $outputText = "$stdout`n$stderr"
+                        # Resolve the executable path using Get-Command (handles .cmd, .exe, etc. on Windows)
+                        $resolvedExecutable = $null
+                        try {
+                            # Get all available commands with this name
+                            $allCommands = @(Get-Command $executable -All -ErrorAction Stop)
 
-                    # Send output to verbose (filter out empty lines)
-                    if ($stdout) {
-                        $stdout -split "`n" | Where-Object { $_.Trim() } | ForEach-Object { $trimmed = $_.Trim(); if ($trimmed) { Write-PSFMessage -Level Verbose -Message $trimmed } }
-                    }
-                    if ($stderr) {
-                        $stderr -split "`n" | Where-Object { $_.Trim() } | ForEach-Object { $trimmed = $_.Trim(); if ($trimmed) { Write-PSFMessage -Level Verbose -Message $trimmed } }
+                            # Prefer executables in this order: .exe, .cmd, .bat, then others
+                            # Exclude .ps1 files as they can't be run directly by ProcessStartInfo
+                            $preferredExtensions = @('.exe', '.cmd', '.bat', '')
+                            $selectedCommand = $null
+
+                            foreach ($ext in $preferredExtensions) {
+                                $selectedCommand = $allCommands | Where-Object {
+                                    $_.Source -and (
+                                        ($ext -eq '' -and -not $_.Source.EndsWith('.ps1')) -or
+                                        $_.Source.EndsWith($ext)
+                                    )
+                                } | Select-Object -First 1
+                                if ($selectedCommand) { break }
+                            }
+
+                            if ($selectedCommand) {
+                                $resolvedExecutable = $selectedCommand.Source
+                                if (-not $resolvedExecutable) {
+                                    $resolvedExecutable = $selectedCommand.Path
+                                }
+                                Write-PSFMessage -Level Verbose -Message "Resolved executable: $resolvedExecutable"
+                            } else {
+                                # Fallback to original executable name
+                                $resolvedExecutable = $executable
+                                Write-PSFMessage -Level Verbose -Message "No suitable executable found, using: $resolvedExecutable"
+                            }
+                        } catch {
+                            # If Get-Command fails, use the original executable name
+                            $resolvedExecutable = $executable
+                            Write-PSFMessage -Level Verbose -Message "Could not resolve executable path, using: $resolvedExecutable"
+                        }
+
+                        $psi = New-Object System.Diagnostics.ProcessStartInfo
+                        $psi.FileName = $resolvedExecutable
+                        $psi.Arguments = $arguments
+                        $psi.RedirectStandardOutput = $true
+                        $psi.RedirectStandardError = $true
+                        $psi.UseShellExecute = $false
+                        $psi.CreateNoWindow = $true
+
+                        $process = New-Object System.Diagnostics.Process
+                        $process.StartInfo = $psi
+                        $process.Start() | Out-Null
+
+                        $stdout = $process.StandardOutput.ReadToEnd()
+                        $stderr = $process.StandardError.ReadToEnd()
+                        $process.WaitForExit()
+
+                        $exitCode = $process.ExitCode
+                        $outputText = "$stdout`n$stderr"
+
+                        # Send output to verbose (filter out empty lines)
+                        if ($stdout) {
+                            $stdout -split "`n" | Where-Object { $_.Trim() } | ForEach-Object { $trimmed = $_.Trim(); if ($trimmed) { Write-PSFMessage -Level Verbose -Message $trimmed } }
+                        }
+                        if ($stderr) {
+                            $stderr -split "`n" | Where-Object { $_.Trim() } | ForEach-Object { $trimmed = $_.Trim(); if ($trimmed) { Write-PSFMessage -Level Verbose -Message $trimmed } }
+                        }
                     }
 
                     Write-PSFMessage -Level Verbose -Message "Command $commandIndex completed with exit code: $exitCode"
