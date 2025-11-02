@@ -610,7 +610,9 @@ function Invoke-AITool {
             } finally {
                 if ($currentTool -eq 'Codex') {
                     Write-PSFMessage -Level Verbose -Message "Cleaning up RUST_LOG environment variable"
-                    Remove-Item Env:RUST_LOG -ErrorAction SilentlyContinue
+                    if (Test-Path Env:RUST_LOG) {
+                        Remove-Item Env:RUST_LOG -ErrorAction SilentlyContinue
+                    }
                 }
 
                 # Restore original location
@@ -994,7 +996,9 @@ function Invoke-AITool {
                 # Clean up Codex environment variable
                 if ($currentTool -eq 'Codex') {
                     Write-PSFMessage -Level Verbose -Message "Cleaning up RUST_LOG environment variable"
-                    Remove-Item Env:RUST_LOG -ErrorAction SilentlyContinue
+                    if (Test-Path Env:RUST_LOG) {
+                        Remove-Item Env:RUST_LOG -ErrorAction SilentlyContinue
+                    }
                 }
 
                 # Restore location after processing each file
