@@ -100,6 +100,19 @@ function Uninstall-AITool {
             return
         }
 
+        # For ClaudeCode on Windows with winget, check if winget is available and fallback to native uninstaller if not
+        if ($Name -eq 'ClaudeCode' -and $os -eq 'Windows' -and $uninstallCmd -match '^winget') {
+            Write-Progress -Activity "Uninstalling $Name" -Status "Checking for winget availability" -PercentComplete 20
+            Write-PSFMessage -Level Verbose -Message "Checking if winget is available..."
+            if (-not (Test-Command -Command 'winget')) {
+                Write-PSFMessage -Level Warning -Message "winget is not available. Falling back to native uninstaller..."
+                $uninstallCmd = 'claude uninstall'
+                Write-PSFMessage -Level Verbose -Message "Using fallback command: $uninstallCmd"
+            } else {
+                Write-PSFMessage -Level Verbose -Message "winget is available, proceeding with winget uninstallation"
+            }
+        }
+
         # Confirm unless Force is specified
         if (-not $Force -and -not $PSCmdlet.ShouldProcess($Name, "Uninstall AI tool")) {
             Write-Progress -Activity "Uninstalling $Name" -Completed

@@ -120,6 +120,19 @@ function Install-AITool {
             $installCmd = @($installCmd)
         }
 
+        # For ClaudeCode on Windows with winget, check if winget is available and fallback to PowerShell installer if not
+        if ($currentToolName -eq 'ClaudeCode' -and $os -eq 'Windows' -and $installCmd[0] -match '^winget') {
+            Write-Progress -Activity "Installing $currentToolName" -Status "Checking for winget availability" -PercentComplete 18
+            Write-PSFMessage -Level Verbose -Message "Checking if winget is available..."
+            if (-not (Test-Command -Command 'winget')) {
+                Write-PSFMessage -Level Warning -Message "winget is not available. Falling back to PowerShell installer..."
+                $installCmd = @('irm https://claude.ai/install.ps1 | iex')
+                Write-PSFMessage -Level Verbose -Message "Using fallback command: $($installCmd[0])"
+            } else {
+                Write-PSFMessage -Level Verbose -Message "winget is available, proceeding with winget installation"
+            }
+        }
+
         # Check for Node.js prerequisite if using npm installation
         if ($installCmd[0] -match '^npm install') {
                 Write-Progress -Activity "Installing $currentToolName" -Status "Checking prerequisites" -PercentComplete 20

@@ -50,13 +50,13 @@ $script:ToolDefinitions = @{
         Command           = 'claude'
         InstallCommands   = @{
             Windows = 'winget install --id=Anthropic.ClaudeCode -e --accept-source-agreements --accept-package-agreements'
-            Linux   = 'npm install -g @anthropic-ai/claude-code'
-            MacOS   = 'npm install -g @anthropic-ai/claude-code'
+            Linux   = 'curl -fsSL https://claude.ai/install.sh | bash'
+            MacOS   = 'curl -fsSL https://claude.ai/install.sh | bash'
         }
         UninstallCommands = @{
             Windows = 'winget uninstall --id=Anthropic.ClaudeCode -e --accept-source-agreements --accept-package-agreements'
-            Linux   = 'npm uninstall -g @anthropic-ai/claude-code'
-            MacOS   = 'npm uninstall -g @anthropic-ai/claude-code'
+            Linux   = 'claude uninstall'
+            MacOS   = 'claude uninstall'
         }
         TestCommand       = 'claude --version'
         InitCommand       = 'claude setup-token'
