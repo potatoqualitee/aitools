@@ -165,7 +165,7 @@ $script:ToolDefinitions = @{
     'Cursor' = @{
         Command           = 'cursor-agent'
         InstallCommands   = @{
-            Windows = 'Write-Host "⚠️ Native Windows install not supported. Please use WSL or Linux/macOS."'
+            Windows = $null
             Linux   = 'curl https://cursor.com/install -fsSL | bash'
             MacOS   = 'curl https://cursor.com/install -fsSL | bash'
         }

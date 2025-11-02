@@ -111,7 +111,12 @@ function Install-AITool {
 
         if (-not $installCmd) {
                 Write-Progress -Activity "Installing $currentToolName" -Completed
-            Stop-PSFFunction -Message "No installation command defined for $currentToolName on $os" -EnableException $true
+            # Special message for Cursor on Windows
+            if ($currentToolName -eq 'Cursor' -and $os -eq 'Windows') {
+                Stop-PSFFunction -Message "Native Windows installation is not supported for $currentToolName. Please use WSL (Windows Subsystem for Linux) or install on Linux/MacOS." -EnableException $true
+            } else {
+                Stop-PSFFunction -Message "No installation command defined for $currentToolName on $os" -EnableException $true
+            }
             return
         }
 
