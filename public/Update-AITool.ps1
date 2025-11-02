@@ -88,8 +88,8 @@ function Update-AITool {
                     $tool = $script:ToolDefinitions[$toolName]
                     $oldVersion = $null
                     if (Test-Command -Command $tool.Command) {
-                        $oldVersion = & $tool.Command --version 2>&1 | Out-String
-                        $oldVersion = $oldVersion -replace '^.*?(\d+\.\d+\.\d+).*$', '$1'
+                        $oldVersion = & $tool.Command --version 2>&1 | Select-Object -First 1
+                        $oldVersion = ($oldVersion -replace '^.*?(\d+\.\d+\.\d+).*$', '$1').Trim()
                         Write-PSFMessage -Level Verbose -Message "Current version: $oldVersion"
                     }
 
