@@ -276,6 +276,15 @@ function Install-AITool {
                         $executable = $cmdParts[0]
                         $arguments = if ($cmdParts.Count -gt 1) { $cmdParts[1] } else { '' }
 
+                        # Handle python/python3 fallback on Linux/MacOS
+                        if ($executable -eq 'python' -and $os -ne 'Windows') {
+                            Write-PSFMessage -Level Verbose -Message "Checking for python3 alternative on Unix system"
+                            if (-not (Test-Command -Command 'python') -and (Test-Command -Command 'python3')) {
+                                Write-PSFMessage -Level Verbose -Message "python not found, using python3 instead"
+                                $executable = 'python3'
+                            }
+                        }
+
                         Write-PSFMessage -Level Verbose -Message "Executable: $executable"
                         Write-PSFMessage -Level Verbose -Message "Arguments: $arguments"
 
@@ -384,8 +393,17 @@ function Install-AITool {
                     # On Unix, npm global installs go to different locations
                     $npmBin = npm config get prefix 2>$null
                     if ($npmBin) {
-                        $env:PATH = "$npmBin/bin:$env:PATH"
+                        $env:PATH = "${npmBin}/bin:${env:PATH}"
                         Write-PSFMessage -Level Verbose -Message "Added npm global bin to PATH: $npmBin/bin"
+                    }
+
+                    # Cursor Agent installs to ~/.local/bin
+                    if ($currentToolName -eq 'Cursor') {
+                        $localBin = "${env:HOME}/.local/bin"
+                        if (-not ($env:PATH -like "*$localBin*")) {
+                            $env:PATH = "${localBin}:${env:PATH}"
+                            Write-PSFMessage -Level Verbose -Message "Added Cursor Agent bin to PATH: $localBin"
+                        }
                     }
                 }
 
@@ -425,7 +443,14 @@ function Install-AITool {
                     }
                 } else {
                         Write-Progress -Activity "Installing $currentToolName" -Completed
-                    Write-PSFMessage -Level Error -Message "$currentToolName installation completed but command not found. You may need to restart your shell."
+
+                    # Provide tool-specific guidance for post-install issues
+                    $additionalMessage = ""
+                    if ($currentToolName -eq 'Cursor' -and $os -ne 'Windows') {
+                        $additionalMessage = " Add ~/.local/bin to your PATH by running: echo 'export PATH=`$HOME/.local/bin:`$PATH' >> ~/.bashrc && source ~/.bashrc"
+                    }
+
+                    Write-PSFMessage -Level Warning -Message "$currentToolName installation completed but command not found. You may need to restart your shell.$additionalMessage"
 
                     [PSCustomObject]@{
                         PSTypeName = 'AITools.InstallResult'

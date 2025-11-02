@@ -166,8 +166,8 @@ $script:ToolDefinitions = @{
         Command           = 'cursor-agent'
         InstallCommands   = @{
             Windows = $null
-            Linux   = 'curl https://cursor.com/install -fsSL | bash'
-            MacOS   = 'curl https://cursor.com/install -fsSL | bash'
+            Linux   = 'curl https://cursor.com/install -fsS | bash'
+            MacOS   = 'curl https://cursor.com/install -fsS | bash'
         }
         UninstallCommands = @{
             Windows = $null
