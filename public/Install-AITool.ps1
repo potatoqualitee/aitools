@@ -76,11 +76,11 @@ function Install-AITool {
         Write-PSFMessage -Level Verbose -Message "Checking if $currentToolName is already installed"
         if (Test-Command -Command $tool.Command) {
             # If SuppressAlreadyInstalledWarning is set, we're being called from Update-AITool
-            # so we should continue with installation/update instead of returning early
+            # so we should continue with installation/update instead of skipping
             if (-not $SuppressAlreadyInstalledWarning) {
                 $version = & $tool.Command --version 2>&1 | Select-Object -First 1
                 Write-PSFMessage -Level Output -Message "$currentToolName is already installed (version: $($version.Trim()))"
-                Write-PSFMessage -Level Output -Message "Skipping installation. To reinstall, first run: Uninstall-AITool -Name $currentToolName"
+                Write-PSFMessage -Level Verbose -Message "Skipping installation. To reinstall, first run: Uninstall-AITool -Name $currentToolName"
 
                 # Get the full path to the command
                 $commandPath = (Get-Command $tool.Command -ErrorAction SilentlyContinue).Source
@@ -99,7 +99,7 @@ function Install-AITool {
                     Path       = $commandPath
                     Installer  = 'Already Installed'
                 }
-                return
+                continue
             } else {
                 Write-PSFMessage -Level Verbose -Message "$currentToolName is already installed, proceeding with update check..."
             }
