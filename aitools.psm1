@@ -61,10 +61,6 @@ $script:ToolDefinitions = @{
         TestCommand       = 'claude --version'
         InitCommand       = 'claude setup-token'
         PermissionFlag    = '--dangerously-skip-permissions'
-        Model             = @{
-            Flag    = '--model'
-            Default = 'claude-sonnet-4-5-20250929'
-        }
         Verbose           = '--verbose'
         Debug             = '--debug'
         Priority          = 1
