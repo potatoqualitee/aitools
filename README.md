@@ -132,6 +132,8 @@ Get-ChildItem ./public/*.ps1 |
 ### 🎨 Style Enforcement
 
 ```powershell
+# This is an ineffective prompt, shown only for demo purposes
+# It's much better to give step by step what OTBS is
 Get-ChildItem *.ps1 -Recurse |
   Invoke-AITool -Prompt "Apply OTBS formatting"
 ```
@@ -140,9 +142,13 @@ Get-ChildItem *.ps1 -Recurse |
 
 ```powershell
 # Create a Hugo website with colors extracted from an image
-Invoke-AITool -Tool Codex `
-  -Prompt "Create a new markdown-driven Hugo website that uses the color scheme of the image attachment" `
-  -Attachment ".\design-inspiration.png"
+$params = @{
+    Tool       = 'Codex'
+    Prompt     = 'Create a new markdown-driven Hugo website that uses the color scheme of the image attachment'
+    Attachment = '.\design-inspiration.png'
+}
+
+Invoke-AITool @params
 ```
 
 > **Note:** The `-Attachment` parameter only works with **Codex** and supports image files (`.png`, `.jpg`, `.jpeg`, `.gif`, `.bmp`, `.webp`, `.svg`).
