@@ -69,13 +69,13 @@ $script:ToolDefinitions = @{
         Command           = 'aider'
         InstallCommands   = @{
             Windows = @('python -m pip install aider-install', 'aider-install')
-            Linux   = @('python -m pip install aider-install', 'aider-install')
-            MacOS   = @('python -m pip install aider-install', 'aider-install')
+            Linux   = 'pipx install aider-chat'
+            MacOS   = 'pipx install aider-chat'
         }
         UninstallCommands = @{
             Windows = 'uv tool uninstall aider-chat'
-            Linux   = 'uv tool uninstall aider-chat'
-            MacOS   = 'uv tool uninstall aider-chat'
+            Linux   = 'pipx uninstall aider-chat'
+            MacOS   = 'pipx uninstall aider-chat'
         }
         TestCommand       = 'aider --version'
         InitCommand       = 'API_KEY_CHECK'  # Special flag for API key verification
@@ -229,7 +229,7 @@ $installParams = @{
 Register-PSFTeppArgumentCompleter @installParams
 
 $invokeParams = @{
-    Command   = 'Invoke-AITool', 'Set-AIToolConfig', 'Set-AIToolDefault', 'Clear-AIToolConfig', 'Get-AIToolConfig', 'Update-PesterTest'
+    Command   = 'Invoke-AITool', 'Set-AIToolConfig', 'Set-AIToolDefault', 'Clear-AIToolConfig', 'Get-AIToolConfig', 'Get-AITool', 'Update-PesterTest'
     Parameter = 'Tool'
     Name      = $teppName
 }
@@ -255,6 +255,7 @@ $exportedFunctions = @(
     'Set-AIToolDefault',
     'Clear-AIToolConfig',
     'Get-AIToolConfig',
+    'Get-AITool',
     'Get-AITPrompt',
     'Update-AITool',
     'Update-PesterTest',

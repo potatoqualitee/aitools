@@ -14,17 +14,26 @@ function Install-AITool {
         Skip the automatic initialization/login command after installation.
         By default, initialization runs automatically after successful installation.
 
+    .PARAMETER Scope
+        Installation scope: CurrentUser (default) or LocalMachine (requires sudo/admin privileges).
+        CurrentUser installs to user-local directories without requiring elevated permissions.
+        LocalMachine installs system-wide and requires sudo on Linux/MacOS or admin privileges on Windows.
+
     .EXAMPLE
         Install-AITool -Name ClaudeCode
-        Installs Claude Code, runs initialization, and returns installation details.
+        Installs Claude Code for the current user, runs initialization, and returns installation details.
 
     .EXAMPLE
         Install-AITool -Name Aider -SkipInitialization
-        Installs Aider without running initialization.
+        Installs Aider for the current user without running initialization.
+
+    .EXAMPLE
+        Install-AITool -Name Aider -Scope LocalMachine
+        Installs Aider system-wide (requires sudo/admin privileges).
 
     .EXAMPLE
         Install-AITool -Name All
-        Installs all available AI tools sequentially.
+        Installs all available AI tools sequentially for the current user.
 
     .OUTPUTS
         AITools.InstallResult
@@ -38,6 +47,10 @@ function Install-AITool {
 
         [Parameter()]
         [switch]$SkipInitialization,
+
+        [Parameter()]
+        [ValidateSet('CurrentUser', 'LocalMachine')]
+        [string]$Scope = 'CurrentUser',
 
         [Parameter()]
         [switch]$SuppressAlreadyInstalledWarning
@@ -138,6 +151,89 @@ function Install-AITool {
             }
         }
 
+        # Check for pipx prerequisite if using pipx installation
+        if ($installCmd[0] -match '^pipx install') {
+                Write-Progress -Activity "Installing $currentToolName" -Status "Checking prerequisites" -PercentComplete 20
+            Write-PSFMessage -Level Verbose -Message "Checking for pipx prerequisite (pipx-based installation)"
+            if (-not (Test-Command -Command 'pipx')) {
+                Write-PSFMessage -Level Warning -Message "pipx is not installed or not in PATH. Installing pipx..."
+
+                if ($os -eq 'Linux') {
+                        Write-Progress -Activity "Installing $currentToolName" -Status "Installing pipx prerequisite" -PercentComplete 25
+
+                    # Choose installation method based on Scope
+                    if ($Scope -eq 'LocalMachine') {
+                        Write-PSFMessage -Level Verbose -Message "Installing pipx system-wide (requires sudo)..."
+                        $pipxInstallCmd = 'sudo apt-get update && sudo apt-get install -y pipx && pipx ensurepath'
+                    } else {
+                        Write-PSFMessage -Level Verbose -Message "Installing pipx for current user (no sudo required)..."
+                        $pipxInstallCmd = 'python3 -m pip install --user pipx && python3 -m pipx ensurepath'
+                    }
+
+                    try {
+                        $psi = New-Object System.Diagnostics.ProcessStartInfo
+                        $psi.FileName = '/bin/bash'
+                        $psi.Arguments = "-c `"$pipxInstallCmd`""
+                        $psi.RedirectStandardOutput = $true
+                        $psi.RedirectStandardError = $true
+                        $psi.UseShellExecute = $false
+                        $psi.CreateNoWindow = $true
+
+                        $process = New-Object System.Diagnostics.Process
+                        $process.StartInfo = $psi
+                        $process.Start() | Out-Null
+                        $stdout = $process.StandardOutput.ReadToEnd()
+                        $stderr = $process.StandardError.ReadToEnd()
+                        $process.WaitForExit()
+
+                        if ($process.ExitCode -ne 0) {
+                                Write-Progress -Activity "Installing $currentToolName" -Completed
+                            if ($Scope -eq 'LocalMachine') {
+                                Stop-PSFFunction -Message "pipx installation failed. Please install pipx manually: sudo apt-get install pipx" -EnableException $true
+                            } else {
+                                Stop-PSFFunction -Message "pipx installation failed. Please install pipx manually: python3 -m pip install --user pipx" -EnableException $true
+                            }
+                            return
+                        }
+
+                        # Refresh PATH to pick up pipx
+                        $pipxBin = "${env:HOME}/.local/bin"
+                        if (-not ($env:PATH -like "*$pipxBin*")) {
+                            $env:PATH = "${pipxBin}:${env:PATH}"
+                        }
+
+                        if (-not (Test-Command -Command 'pipx')) {
+                                Write-Progress -Activity "Installing $currentToolName" -Completed
+                            Stop-PSFFunction -Message "pipx installation failed. Please install pipx manually and try again." -EnableException $true
+                            return
+                        }
+                        Write-PSFMessage -Level Verbose -Message "pipx installed successfully."
+                    } catch {
+                            Write-Progress -Activity "Installing $currentToolName" -Completed
+                        Stop-PSFFunction -Message "Failed to install pipx: $_" -EnableException $true
+                        return
+                    }
+                } elseif ($os -eq 'MacOS') {
+                        Write-Progress -Activity "Installing $currentToolName" -Completed
+                    if ($Scope -eq 'LocalMachine') {
+                        Stop-PSFFunction -Message "pipx is required but not installed. Please install pipx using: brew install pipx" -EnableException $true
+                    } else {
+                        Stop-PSFFunction -Message "pipx is required but not installed. Please install pipx using: python3 -m pip install --user pipx && python3 -m pipx ensurepath" -EnableException $true
+                    }
+                    return
+                } else {
+                        Write-Progress -Activity "Installing $currentToolName" -Completed
+                    Stop-PSFFunction -Message "pipx is required but not installed. Please install pipx using: python -m pip install --user pipx" -EnableException $true
+                    return
+                }
+            } else {
+                $pipxVersion = (& pipx --version 2>&1 | Out-String).Trim()
+                if ($pipxVersion) {
+                    Write-PSFMessage -Level Verbose -Message "pipx is available: $pipxVersion"
+                }
+            }
+        }
+
         # Check for Node.js prerequisite if using npm installation
         if ($installCmd[0] -match '^npm install') {
                 Write-Progress -Activity "Installing $currentToolName" -Status "Checking prerequisites" -PercentComplete 20
@@ -147,10 +243,58 @@ function Install-AITool {
 
                 if ($os -eq 'Linux') {
                         Write-Progress -Activity "Installing $currentToolName" -Status "Installing Node.js prerequisite" -PercentComplete 25
-                    Write-PSFMessage -Level Verbose -Message "Installing Node.js via NodeSource repository..."
-                    $nodeInstallCmd = 'curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash - && sudo apt-get install -y nodejs'
+
+                    # Choose installation method based on Scope
+                    if ($Scope -eq 'LocalMachine') {
+                        Write-PSFMessage -Level Verbose -Message "Installing Node.js system-wide (requires sudo)..."
+                        $nodeInstallCmd = 'curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash - && sudo apt-get install -y nodejs'
+                    } else {
+                        Write-PSFMessage -Level Verbose -Message "Installing Node.js for current user using nvm (no sudo required)..."
+                        $nodeInstallCmd = 'curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash && export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" && nvm install --lts && nvm use --lts'
+                    }
+
                     try {
-                        Invoke-Expression $nodeInstallCmd | Out-Null
+                        $psi = New-Object System.Diagnostics.ProcessStartInfo
+                        $psi.FileName = '/bin/bash'
+                        $psi.Arguments = "-c `"$nodeInstallCmd`""
+                        $psi.RedirectStandardOutput = $true
+                        $psi.RedirectStandardError = $true
+                        $psi.UseShellExecute = $false
+                        $psi.CreateNoWindow = $true
+
+                        $process = New-Object System.Diagnostics.Process
+                        $process.StartInfo = $psi
+                        $process.Start() | Out-Null
+                        $stdout = $process.StandardOutput.ReadToEnd()
+                        $stderr = $process.StandardError.ReadToEnd()
+                        $process.WaitForExit()
+
+                        if ($process.ExitCode -ne 0) {
+                                Write-Progress -Activity "Installing $currentToolName" -Completed
+                            if ($Scope -eq 'LocalMachine') {
+                                Stop-PSFFunction -Message "Node.js installation failed. Please install Node.js manually: sudo apt-get install nodejs" -EnableException $true
+                            } else {
+                                Stop-PSFFunction -Message "Node.js installation failed. Please install Node.js manually using nvm or from https://nodejs.org/" -EnableException $true
+                            }
+                            return
+                        }
+
+                        # Refresh PATH to pick up Node.js
+                        if ($Scope -eq 'CurrentUser') {
+                            # For nvm, we need to source the nvm script and add to PATH
+                            $nvmDir = "${env:HOME}/.nvm"
+                            if (Test-Path "$nvmDir/nvm.sh") {
+                                # Get the node path from nvm
+                                $nvmNodePath = & /bin/bash -c "export NVM_DIR=`"$nvmDir`" && [ -s `"`$NVM_DIR/nvm.sh`" ] && \. `"`$NVM_DIR/nvm.sh`" && command -v node" 2>&1
+                                if ($nvmNodePath) {
+                                    $nvmBinPath = Split-Path -Parent $nvmNodePath
+                                    if (-not ($env:PATH -like "*$nvmBinPath*")) {
+                                        $env:PATH = "${nvmBinPath}:${env:PATH}"
+                                    }
+                                }
+                            }
+                        }
+
                         if (-not (Test-Command -Command 'node')) {
                                 Write-Progress -Activity "Installing $currentToolName" -Completed
                             Stop-PSFFunction -Message "Node.js installation failed. Please install Node.js manually and try again." -EnableException $true
@@ -164,7 +308,11 @@ function Install-AITool {
                     }
                 } elseif ($os -eq 'MacOS') {
                         Write-Progress -Activity "Installing $currentToolName" -Completed
-                    Stop-PSFFunction -Message "Node.js is required but not installed. Please install Node.js using: brew install node" -EnableException $true
+                    if ($Scope -eq 'LocalMachine') {
+                        Stop-PSFFunction -Message "Node.js is required but not installed. Please install Node.js using: brew install node" -EnableException $true
+                    } else {
+                        Stop-PSFFunction -Message "Node.js is required but not installed. Please install Node.js using nvm or from https://nodejs.org/" -EnableException $true
+                    }
                     return
                 } else {
                         Write-Progress -Activity "Installing $currentToolName" -Completed
@@ -362,22 +510,140 @@ function Install-AITool {
                     $isAlreadyLatestVersion = ($exitCode -eq -1978335189) -and ($outputText -match 'No available upgrade found|No newer package versions')
 
                     if ($exitCode -ne 0 -and -not $isAlreadyLatestVersion) {
-                            Write-Progress -Activity "Installing $currentToolName" -Completed
+                        # Check for npm ENOTEMPTY error (exit code 217 or stderr contains ENOTEMPTY)
+                        $isNpmEnotemptyError = ($exitCode -eq 217 -or $outputText -match 'ENOTEMPTY|directory not empty') -and $cmd -match '^npm install'
 
-                        # Set default parameter for cleaner error output
-                        $PSDefaultParameterValues['Write-PSFMessage:Level'] = 'Output'
+                        if ($isNpmEnotemptyError) {
+                            Write-PSFMessage -Level Warning -Message "npm ENOTEMPTY error detected. Attempting automatic cleanup and retry..."
 
-                        Write-PSFMessage -Message "Installation command $commandIndex failed with exit code ${exitCode}."
-                        Write-PSFMessage -Message "Command: $cmd"
+                            # Extract package name from npm install command
+                            $packageName = $null
+                            if ($cmd -match 'npm install -g (.+)') {
+                                $packageName = $Matches[1].Trim()
+                                Write-PSFMessage -Level Verbose -Message "Extracted package name: $packageName"
 
-                        # Include the actual error output
-                        if ($outputText.Trim()) {
-                            Write-PSFMessage -Message "Error output:"
-                            Write-PSFMessage $outputText.Trim()
+                                # Determine npm global lib path
+                                $npmPrefix = & npm config get prefix 2>&1 | Out-String
+                                $npmPrefix = $npmPrefix.Trim()
+
+                                if ($npmPrefix) {
+                                    $packagePath = Join-Path $npmPrefix "lib/node_modules/$packageName"
+                                    Write-PSFMessage -Level Verbose -Message "Package path: $packagePath"
+
+                                    # Remove the problematic directory
+                                    if (Test-Path $packagePath) {
+                                        Write-PSFMessage -Level Verbose -Message "Removing problematic directory: $packagePath"
+                                        try {
+                                            Remove-Item -Path $packagePath -Recurse -Force -ErrorAction Stop
+                                            Write-PSFMessage -Level Verbose -Message "Directory removed successfully"
+                                        } catch {
+                                            Write-PSFMessage -Level Warning -Message "Failed to remove directory: $_"
+                                        }
+                                    } else {
+                                        Write-PSFMessage -Level Verbose -Message "Package directory not found at expected location"
+                                    }
+
+                                    # Retry the installation
+                                    Write-PSFMessage -Level Verbose -Message "Retrying installation command: $cmd"
+                                    Write-Progress -Activity "Installing $currentToolName" -Status "Retrying after cleanup (this may take a while)" -PercentComplete 40
+
+                                    # Re-execute the same command logic
+                                    if ($requiresShell) {
+                                        if ($os -eq 'Windows') {
+                                            $psi = New-Object System.Diagnostics.ProcessStartInfo
+                                            $psi.FileName = 'cmd.exe'
+                                            $psi.Arguments = "/c $cmd"
+                                            $psi.RedirectStandardOutput = $true
+                                            $psi.RedirectStandardError = $true
+                                            $psi.UseShellExecute = $false
+                                            $psi.CreateNoWindow = $true
+
+                                            $process = New-Object System.Diagnostics.Process
+                                            $process.StartInfo = $psi
+                                            $process.Start() | Out-Null
+                                            $stdout = $process.StandardOutput.ReadToEnd()
+                                            $stderr = $process.StandardError.ReadToEnd()
+                                            $process.WaitForExit()
+                                            $exitCode = $process.ExitCode
+                                        } else {
+                                            $shellCmd = if (Test-Path '/bin/bash') { '/bin/bash' } else { '/bin/sh' }
+                                            $psi = New-Object System.Diagnostics.ProcessStartInfo
+                                            $psi.FileName = $shellCmd
+                                            $psi.Arguments = "-c `"$cmd`""
+                                            $psi.RedirectStandardOutput = $true
+                                            $psi.RedirectStandardError = $true
+                                            $psi.UseShellExecute = $false
+                                            $psi.CreateNoWindow = $true
+
+                                            $process = New-Object System.Diagnostics.Process
+                                            $process.StartInfo = $psi
+                                            $process.Start() | Out-Null
+                                            $stdout = $process.StandardOutput.ReadToEnd()
+                                            $stderr = $process.StandardError.ReadToEnd()
+                                            $process.WaitForExit()
+                                            $exitCode = $process.ExitCode
+                                        }
+                                        $outputText = "$stdout`n$stderr"
+                                    } else {
+                                        # Re-execute using Start-Process for simple commands
+                                        $psi = New-Object System.Diagnostics.ProcessStartInfo
+                                        $psi.FileName = $resolvedExecutable
+                                        $psi.Arguments = $arguments
+                                        $psi.RedirectStandardOutput = $true
+                                        $psi.RedirectStandardError = $true
+                                        $psi.UseShellExecute = $false
+                                        $psi.CreateNoWindow = $true
+
+                                        $process = New-Object System.Diagnostics.Process
+                                        $process.StartInfo = $psi
+                                        $process.Start() | Out-Null
+                                        $stdout = $process.StandardOutput.ReadToEnd()
+                                        $stderr = $process.StandardError.ReadToEnd()
+                                        $process.WaitForExit()
+                                        $exitCode = $process.ExitCode
+                                        $outputText = "$stdout`n$stderr"
+                                    }
+
+                                    if ($stdout) {
+                                        $stdout -split "`n" | Where-Object { $_.Trim() } | ForEach-Object { $trimmed = $_.Trim(); if ($trimmed) { Write-PSFMessage -Level Verbose -Message $trimmed } }
+                                    }
+                                    if ($stderr) {
+                                        $stderr -split "`n" | Where-Object { $_.Trim() } | ForEach-Object { $trimmed = $_.Trim(); if ($trimmed) { Write-PSFMessage -Level Verbose -Message $trimmed } }
+                                    }
+
+                                    Write-PSFMessage -Level Verbose -Message "Retry completed with exit code: $exitCode"
+
+                                    # If retry still failed, fall through to normal error handling
+                                    if ($exitCode -ne 0) {
+                                        Write-PSFMessage -Level Warning -Message "Retry failed. Falling back to normal error handling."
+                                    } else {
+                                        Write-PSFMessage -Level Verbose -Message "Retry successful!"
+                                        # Continue to next command
+                                        continue
+                                    }
+                                }
+                            }
                         }
 
-                        Stop-PSFFunction -Message "Installation failed. See error details above." -EnableException $true
-                        return
+                        # Normal error handling if not npm ENOTEMPTY or retry failed
+                        if ($exitCode -ne 0) {
+                            Write-Progress -Activity "Installing $currentToolName" -Completed
+
+                            # Set default parameter for cleaner error output
+                            $PSDefaultParameterValues['Write-PSFMessage:Level'] = 'Output'
+
+                            Write-PSFMessage -Message "Installation command $commandIndex failed with exit code ${exitCode}."
+                            Write-PSFMessage -Message "Command: $cmd"
+
+                            # Include the actual error output
+                            if ($outputText.Trim()) {
+                                Write-PSFMessage -Message "Error output:"
+                                Write-PSFMessage $outputText.Trim()
+                            }
+
+                            Stop-PSFFunction -Message "Installation failed. See error details above." -EnableException $true
+                            return
+                        }
                     } elseif ($isAlreadyLatestVersion) {
                         Write-PSFMessage -Level Verbose -Message "Package is already at the latest version (exit code: $exitCode)"
                     }
@@ -397,12 +663,12 @@ function Install-AITool {
                         Write-PSFMessage -Level Verbose -Message "Added npm global bin to PATH: $npmBin/bin"
                     }
 
-                    # Cursor Agent installs to ~/.local/bin
-                    if ($currentToolName -eq 'Cursor') {
+                    # pipx and Cursor Agent install to ~/.local/bin
+                    if ($currentToolName -eq 'Cursor' -or $currentToolName -eq 'Aider') {
                         $localBin = "${env:HOME}/.local/bin"
                         if (-not ($env:PATH -like "*$localBin*")) {
                             $env:PATH = "${localBin}:${env:PATH}"
-                            Write-PSFMessage -Level Verbose -Message "Added Cursor Agent bin to PATH: $localBin"
+                            Write-PSFMessage -Level Verbose -Message "Added ~/.local/bin to PATH: $localBin"
                         }
                     }
                 }
