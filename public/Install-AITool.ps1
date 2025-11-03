@@ -514,7 +514,7 @@ function Install-AITool {
                         $isNpmEnotemptyError = ($exitCode -eq 217 -or $outputText -match 'ENOTEMPTY|directory not empty') -and $cmd -match '^npm install'
 
                         if ($isNpmEnotemptyError) {
-                            Write-PSFMessage -Level Warning -Message "npm ENOTEMPTY error detected. Attempting automatic cleanup and retry..."
+                            Write-PSFMessage -Level Verbose -Message "npm ENOTEMPTY error detected. Attempting automatic cleanup and retry..."
 
                             # Extract package name from npm install command
                             $packageName = $null
