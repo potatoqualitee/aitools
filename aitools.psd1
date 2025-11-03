@@ -38,6 +38,7 @@
     # Public functions
     FunctionsToExport = @(
         'Clear-AIToolConfig',
+        'Get-AITool',
         'Get-AIToolConfig',
         'Get-AITPrompt',
         'Install-AITool',
