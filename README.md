@@ -7,318 +7,315 @@
 <img align="left" src="https://raw.githubusercontent.com/potatoqualitee/aitools/main/logo.png" alt="aitools logo" width="96">
 
 **Batch-process your code with popular AI CLI editors.**
-aitools is a PowerShell module for managing and automating *agentic CLI tools* such as
-[**Claude Code**](https://github.com/anthropics/claude-code), [**Aider**](https://github.com/Aider-AI/aider), [**Cursor**](https://www.cursor.com), [**Gemini CLI**](https://github.com/google-gemini/gemini-cli), [**GitHub Copilot CLI**](https://github.com/github/copilot-cli), and more.
 
-Unlike API wrappers that just send prompts, these CLIs actually read, understand, and rewrite your code — and aitools wraps them to make them scriptable and repeatable.
+aitools is a PowerShell module that lets you automate code refactoring, migrations, and documentation tasks using AI coding assistants like Claude Code, Aider, Gemini CLI, and GitHub Copilot CLI.
 
----
-
-## Table of Contents
-
-* [Wrapper vs Agentic CLI Tools](#wrapper-vs-agentic-cli-tools)
-* [Why aitools?](#why-aitools)
-* [Supported CLIs](#supported-clis)
-* [Execution Model](#execution-model)
-* [Tool Reasoning Profiles](#tool-reasoning-profiles)
-* [Quick Start](#quick-start)
-* [Common Scenarios](#common-scenarios)
-* [Installation](#installation)
-* [Advanced Usage](#advanced-usage)
-* [Demo Walkthrough](#demo-walkthrough)
-* [Real-World Case Study: Updating dbatools.io Blog](#real-world-case-study-updating-dbatoolsio-blog)
-* [Contributing](#contributing)
-* [License](#license)
+<br clear="left"/>
 
 ---
 
-## Wrapper vs Agentic CLI Tools
+## What is aitools?
 
-You might be wondering why I published this when [PSOpenAI](https://github.com/mkht/PSOpenAI) exists. I love PSOpenAI — it's the best PowerShell wrapper for the OpenAI-compatible APIs.
+aitools wraps *agentic CLI tools* — AI assistants that actually read, understand, and rewrite your code — making them scriptable and repeatable through PowerShell.
 
-But it's built for **API interaction**, not **code transformation**. When you use agentic tools like Claude Code or GitHub Copilot CLI, they come with toolkits built in whereas APIs are bare, as in they don't manage file I/O, diffs, and other editor behaviors.
-
-| PSOpenAI                                  | Agentic CLI Tools                              |
-| ----------------------------------------- | ---------------------------------------------- |
-| API wrapper — you send a prompt, get text | Code editor — it opens, edits, and saves files |
-| You handle file I/O, diffs, and context   | Built-in context, patching, and safety         |
-| Great for one-off prompts and scripting   | Great for real-world refactors and migrations  |
-| Requires workflow scaffolding             | Ships with full toolchain and local memory     |
-
-aitools orchestrates those CLIs with PowerShell's predictability, discoverability and power.
-
----
-
-## Why aitools?
-
-The reason I built aitools is so that I wouldn't have to repeatedly type `claude --help` and `gemini --help` when I need to figure out how to do something in the CLI. I looked up those just once and documented the steps.
-
-| Without aitools                           | With aitools                        |
-| ----------------------------------------- | ----------------------------------- |
-| Remember CLI flags and install steps      | `Install-AITool -Name ClaudeCode`   |
-| Switch between five different CLIs        | One consistent PowerShell interface |
-| Manually open each file and paste prompts | Batch process hundreds of files     |
-
-💡 **Purpose:** aitools brings *agentic AI* into your automation stack. Refactor, migrate, document, and standardize codebases at scale using the same workflows that PowerShell admins and developers use.
-
----
-
-## Supported CLIs
-
-| CLI | Pricing | Status |
-| --- | --- | --- |
-| **Claude Code** | Subscription required | ✅ Supported |
-| **Cursor AI** | Free tier available | ✅ Supported |
-| **GitHub Copilot** | Free tier available | ✅ Supported |
-| **Google Gemini** | Free tier available | ✅ Supported |
-| **Aider** | Free & paid tiers | ✅ Supported |
-| **Codex CLI** | Flat monthly rate | ✅ Supported |
-| **Ollama** | Free & open source | ✅ Supported |
-
----
-
-## Execution Model
-
-Every aitools operation follows a predictable 3-step reasoning cycle:
-
-1. **Reasoning step** — Pass prompt + migration + style context
-2. **Diff & validation** — Track and display exact edits for review
-
-Example:
-
-```powershell
-Set-AIToolDefault -Tool ClaudeCode
-Get-ChildItem ./tests/*.Tests.ps1 | Update-PesterTest -First 20 -Skip 30 -Verbose
-```
-
-This mirrors how you'd reason through a codebase manually — observe, act, verify — but scaled across hundreds of files.
-
----
-
-## Quick Start
+**In 30 seconds:**
 
 ```powershell
 # Install the module
 Install-Module aitools
 
-# Install and set your favorite AI CLI
+# Install Claude Code
 Install-AITool -Name ClaudeCode
-Set-AIToolDefault -Tool ClaudeCode
 
-# Migrate all your Pester v4 tests to v5
+# Migrate all your Pester tests from v4 to v5
 Get-ChildItem tests\*.Tests.ps1 | Update-PesterTest
 ```
 
-✅ Supports: **Claude Code**, **Aider**, **Gemini CLI**, **GitHub Copilot CLI**, **Codex CLI**, and **Ollama**
-🧠 Works on **Windows, Linux, and macOS**
+That's it. aitools coordinates the AI, handles file I/O, tracks changes, and gives you PowerShell's predictability.
 
 ---
 
-## Common Scenarios
+## Why aitools exists
 
-### 🧪 Test Framework Migrations
+The problem with AI coding assistants isn't their capability — it's their interface. Each CLI has different flags, installation steps, and quirks. When you need to process 100 files, you either:
 
-```powershell
-Get-ChildItem ./tests/*.Tests.ps1 | Update-PesterTest
-```
+1. Click through each one manually in an IDE
+2. Write brittle shell scripts that break when the CLI changes
+3. Build your own wrapper (what I did, then shared)
 
-### 📚 Documentation Sweeps
+**aitools solves this by:**
 
-```powershell
-Get-ChildItem ./public/*.ps1 |
-  Invoke-AITool -Prompt "Add complete comment-based help for each parameter. Include 3 working examples."
-```
+- Providing one consistent interface across multiple AI CLIs
+- Making batch operations simple: pipe files in, get results out
+- Handling the boring parts (installation, updates, configuration)
+- Tracking what changed for review before committing
 
-### 🎨 Style Enforcement
+---
 
-```powershell
-# This is an ineffective prompt, shown only for demo purposes
-# It's much better to give step by step what OTBS is
-Get-ChildItem *.ps1 -Recurse |
-  Invoke-AITool -Prompt "Apply OTBS formatting"
-```
+## How it differs from API wrappers
 
-### 🖼️ Image-Driven Design (Codex Only)
+You might wonder why this exists when [PSOpenAI](https://github.com/mkht/PSOpenAI) is available. The answer: they solve different problems.
 
-```powershell
-# Create a Hugo website with colors extracted from an image
-$params = @{
-    Tool       = 'Codex'
-    Prompt     = 'Create a new markdown-driven Hugo website that uses the color scheme of the image attachment'
-    Attachment = '.\design-inspiration.png'
-}
+| API Wrappers (like PSOpenAI)             | Agentic CLI Tools (like Claude Code)        |
+| ---------------------------------------- | -------------------------------------------- |
+| Send prompts, receive text               | Open files, understand code, make edits      |
+| You handle file I/O and context          | Built-in file management and context         |
+| Great for generating new content         | Great for refactoring existing code          |
+| Requires scaffolding for code work       | Ships with full coding toolchain             |
 
-Invoke-AITool @params
-```
-
-> **Note:** The `-Attachment` parameter only works with **Codex** and supports image files (`.png`, `.jpg`, `.jpeg`, `.gif`, `.bmp`, `.webp`, `.svg`).
-
-### ⚙️ SDK Upgrades (Example: BurntToast Module)
-
-Modules like [**BurntToast**](https://github.com/Windos/BurntToast), which wrap native Windows SDKs, evolve as the underlying APIs change — for example, migrating from the **Windows 10 Notification** APIs to newer Windows 11 APIs.
-
-```powershell
-# Modernize BurntToast module code to the latest Windows 11 SDK
-$splatUpgrade = @{
-    Path            = "./burnttoast/*.ps1"
-    PromptFilePath  = "./prompts/api-upgrade.md"
-    ContextFilePath = @(
-        "./docs/windows11-toast-sdk.md",   # Updated WinRT namespaces
-        "./docs/styleguide.md"             # Internal PowerShell guidelines
-    )
-    Tool            = "ClaudeCode"
-    Verbose         = $true
-}
-Invoke-AITool @splatUpgrade
-```
-
-This setup uses:
-
-* **`PromptFilePath`** — main migration instructions (`api-upgrade.md`)
-* **`ContextFilePath`** — SDK docs, XML schema examples, or layout specs
-
-aitools passes all of this to the AI agent so it can reason about namespace changes,
-XML property renames, and adaptive layout differences — and automatically refactor your module.
+PSOpenAI is excellent for what it does. aitools is for when you need an AI to *edit code*, not just *generate text*.
 
 ---
 
 ## Installation
 
-```powershell
-# PowerShell Gallery (Windows, Linux, macOS)
-Install-Module aitools -Scope CurrentUser
+### Requirements
 
-# Then install your individual agentic tools
-Install-AITool -Name Gemini
-Install-AITool -Name Aider
+- PowerShell 7.0 or later
+- Windows, Linux, or macOS
+
+### Install aitools
+
+```powershell
+Install-Module aitools -Scope CurrentUser
+```
+
+### Install AI tools
+
+Pick the AI assistant you want to use:
+
+```powershell
+# Install one
 Install-AITool -Name ClaudeCode
+
+# Or several
+Install-AITool -Name Gemini, Aider
 
 # Or all of them
 Install-AITool -Name All
 ```
 
-### Update all tools
+### Set your default tool
 
 ```powershell
-Update-AITool
+Set-AIToolDefault -Tool ClaudeCode
 ```
+
+Now any aitools command will use Claude Code unless you specify otherwise.
+
+---
+
+## Quick Start Examples
+
+### Migrate test frameworks
+
+```powershell
+Get-ChildItem ./tests/*.Tests.ps1 | Update-PesterTest
+```
+
+This updates your Pester v4 tests to v5 syntax — handling BeforeAll/AfterAll blocks, Context/Describe changes, and parameter validation.
+
+### Add documentation
+
+```powershell
+Get-ChildItem ./public/*.ps1 |
+  Invoke-AITool -Prompt "Add complete comment-based help with 3 examples"
+```
+
+### Enforce code style
+
+```powershell
+Get-ChildItem *.ps1 -Recurse |
+  Invoke-AITool -Prompt "Apply One True Brace Style formatting"
+```
+
+### Compare multiple AI tools
+
+```powershell
+Invoke-AITool -Path ./script.ps1 -Prompt "Optimize this" -Tool All
+```
+
+Run the same task through all installed AI tools and compare results.
+
+---
+
+## Supported AI Tools
+
+| Tool | Best For | Pricing | Status |
+| --- | --- | --- | --- |
+| **Claude Code** | Complex refactoring, best overall coder | Subscription | ✅ Supported |
+| **Gemini CLI** | Large context windows, generous free tier | Free + paid | ✅ Supported |
+| **Aider** | Reliable diffs, fast iteration | Free + paid | ✅ Supported |
+| **GitHub Copilot** | Integration with GitHub workflow | Free + paid | ✅ Supported |
+| **Codex CLI** | Fast processing | Subscription | ✅ Supported |
+| **Cursor AI** | IDE integration | Free + paid | ✅ Supported |
+| **Ollama** | Offline use, completely free | Free | ✅ Supported |
+
+Each tool has different strengths. Claude Code is the strongest coder but can struggle with files over 400 lines. Gemini has massive context windows. Ollama runs locally with no API costs. Use what fits your needs.
+
+---
+
+## Core Concepts
+
+### The Three-Step Process
+
+Every aitools operation follows the same pattern:
+
+1. **Input** — Provide files and a prompt
+2. **Processing** — AI reads, understands, and edits
+3. **Review** — You see diffs and decide to keep or discard
+
+This mirrors manual code review but scales to hundreds of files.
+
+### Prompts and Context
+
+You can provide:
+
+- **Inline prompts**: Quick instructions right in the command
+- **Prompt files**: Reusable `.md` files with detailed instructions
+- **Context files**: Reference docs, style guides, API specifications
+
+Example with all three:
+
+```powershell
+$params = @{
+    Path            = "./src/*.ps1"
+    PromptFilePath  = "./prompts/api-migration.md"
+    ContextFilePath = @(
+        "./docs/new-api-spec.md",
+        "./docs/style-guide.md"
+    )
+    Tool            = "ClaudeCode"
+}
+Invoke-AITool @params
+```
+
+The AI reads the prompt for what to do, the context for how to do it, and processes each file accordingly.
+
+---
+
+## Real-World Examples
+
+### Case Study: Modernizing a Windows Module
+
+The [BurntToast](https://github.com/Windos/BurntToast) module wraps Windows notification APIs. When Microsoft updated from Windows 10 to Windows 11 APIs, the module needed refactoring.
+
+```powershell
+$params = @{
+    Path            = "./burnttoast/*.ps1"
+    PromptFilePath  = "./prompts/api-upgrade.md"
+    ContextFilePath = @(
+        "./docs/windows11-toast-sdk.md",
+        "./docs/styleguide.md"
+    )
+    Tool            = "ClaudeCode"
+}
+Invoke-AITool @params
+```
+
+This handles namespace changes, XML property renames, and layout differences — automatically refactoring the entire module.
+
+### Case Study: Updating dbatools.io Blog
+
+The [dbatools.io blog](https://dbatools.io) needed systematic updates: broken links, deprecated commands, outdated screenshots, and stale Twitter embeds. The challenge required judgment, not mechanical find-replace.
+
+**The requirements:**
+
+- Fix broken links but preserve historical context
+- Remove Twitter/X embeds while keeping meaning
+- Convert PowerShell screenshots to Hugo shortcodes
+- Update deprecated command names
+- Consider splatting for readability (but not blindly)
+- Maintain author voice and historical accuracy
+
+**The solution:**
+
+```powershell
+Set-AIToolDefault -Tool ClaudeCode
+Get-ChildItem *.md | Invoke-AITool -Prompt ./prompts/audit-blog.md
+```
+
+Using a 300-line prompt that encoded all the nuance, Claude Code processed hundreds of posts, making judgment calls throughout:
+
+- Tested and replaced dead links
+- Converted Twitter embeds to paraphrased statements
+- Extracted commands from screenshots and converted to shortcodes
+- Applied splatting only where it improved clarity
+- Updated deprecated references while preserving historical context
+
+This demonstrates what agentic CLIs do well: read complex requirements, maintain context, and exercise judgment at scale.
 
 ---
 
 ## Advanced Usage
 
+### Working with Images (Codex Only)
+
 ```powershell
-# Run multiple tools for comparison
-Invoke-AITool -Path ./script.ps1 -Prompt "Optimize this" -Tool All
-
-# Configure defaults
-Set-AIToolConfig -Tool ClaudeCode -Model claude-sonnet-4-5
-
-# Custom prompt and context
-Update-PesterTest -PromptFilePath ./prompts/v5migration.md -ContextFilePath ./style.md
+$params = @{
+    Tool       = 'Codex'
+    Prompt     = 'Create a Hugo website using colors from this design'
+    Attachment = '.\design.png'
+}
+Invoke-AITool @params
 ```
 
----
+The `-Attachment` parameter works with image files (`.png`, `.jpg`, `.jpeg`, `.gif`, `.bmp`, `.webp`, `.svg`) and is currently only supported by Codex.
 
-## Tool Reasoning Profiles
+### Custom Configuration
 
-Each supported CLI has distinct reasoning characteristics.
+```powershell
+# Set default model
+Set-AIToolConfig -Tool ClaudeCode -Model claude-sonnet-4-5
 
-| Tool            | Strengths                                                                   | Limitations                      |
-| --------------- | --------------------------------------------------------------------------- | -------------------------------- |
-| **Claude Code** | BEST coder by far, flat monthly rate | Struggles with very large files (400+ lines)  |
-| **Aider**       | Reliable deterministic diffs, fast iterative patches                        | APIs are expensive          |
-| **Gemini CLI**  | Lots of free calls, second best coder, huge context                                 | APIs are expensive once you get past the free call limit     |
-| **Copilot CLI** | Affordable                                     | Just released, basically an alpha CLI |
-| **Codex CLI**   | Fast, flat monthly rate                                               | No idea why people like its coding     |
-| **Ollama**      | Completely free, runs locally, no API key required, great for offline use  | Models vary in quality, slower than cloud-based solutions    |
+# Update all installed tools
+Update-AITool
+```
 
-aitools lets you combine them — even run all in comparison mode — for multi-agent reasoning. Or just make your preferred agent more accessible, like I do.
+### Processing Subsets
+
+```powershell
+# Skip the first 30 files, process the next 20
+Get-ChildItem tests\*.Tests.ps1 |
+  Update-PesterTest -First 20 -Skip 30 -Verbose
+```
+
+Useful for debugging prompts or resuming interrupted batches.
 
 ---
 
 ## Demo Walkthrough
 
-The included Jupyter notebook (`demo.ipynb`) shows a real-world, reasoning-driven migration of **dbatools' 3,500+ Pester tests** from v4 to v5.
-It demonstrates how aitools coordinates *agentic CLIs* through three stages of reasoning:
+The included Jupyter notebook (`demo.ipynb`) walks through migrating dbatools' 3,500+ Pester tests from v4 to v5. It shows:
 
-1. **Initialization** — import the module, set `$PSDefaultParameterValues`, and clear workspace diffs
-2. **Observation & action** — open a real test file (`Invoke-DbaDbShrink.Tests.ps1`) and run `Update-PesterTest` via Claude Code
-3. **Evaluation** — review structural refactors (BeforeAll/AfterAll), parameter tests, and style enforcement
+1. **Setup** — Import module, configure defaults, prepare workspace
+2. **Execution** — Open a real test file and run `Update-PesterTest`
+3. **Review** — Examine structural changes, parameter updates, style enforcement
 
-It highlights how Claude achieved ~80% automation accuracy, with remaining fixes due to legacy code quality.
-The notebook illustrates *how aitools thinks* — combining reproducible PowerShell automation with the flexible reasoning of modern AI tools.
-
----
-
-## Real-World Case Study: Updating dbatools.io Blog
-
-A concrete example of aitools' power came from updating the [dbatools.io blog](https://dbatools.io) — a technical blog with years of posts about SQL Server automation. The blog needed systematic updates: broken links, outdated Twitter embeds, deprecated commands, and old PowerShell screenshots that should be converted to a modern format.
-
-### The Challenge
-
-The task required **nuanced judgment**, not mechanical find-replace:
-
-- Posts are historical documents capturing what was true at the time
-- Updates should fix genuine problems (broken links, wrong info) not stylistic preferences
-- Twitter/X content needed removal while preserving context
-- PowerShell screenshots should be converted to a `{{< powershell-console >}}` Hugo shortcode
-- Code examples with 4+ parameters should consider splatting (but only when appropriate)
-- Links to deprecated dbatools commands needed updating
-- Technical accuracy required understanding ongoing practices vs. historical facts
-
-### The Solution
-
-Using Claude Code through aitools, the blog was batch-processed with a comprehensive audit prompt. The prompt (detailed in context) encoded:
-
-- **CONTEXT**: dbatools maintains backward compatibility (PS 3+, SQL Server 2000+), current year is 2025
-- **IMPORTANT**: This task requires nuance — preserve author voice, historical context, and intentional simplifications
-- **CHECK AND FIX**: Frontmatter updates, link validation, Twitter/X removal, code modernization, screenshot conversion
-- **PRESERVE**: Original writing style, all T-SQL code, working code, historical perspective
-
-### The Process
-
-```powershell
-# Set default tool
-Set-AIToolDefault -Tool ClaudeCode
-
-# Process blog posts with the audit prompt
-Get-ChildItem *.md | Invoke-AITool -Prompt ./update-blog.md
-```
-
-### The Results
-
-Claude Code processed each blog post, exercising judgment throughout:
-
-- **Links**: Tested and replaced dead links, updated Microsoft Docs URLs to current paths
-- **Twitter/X**: Removed embeds and converted to paraphrased statements ("Jeffrey Snover once noted that...")
-- **Screenshots**: Extracted PowerShell commands/output from images and converted to the `{{< powershell-console >}}` shortcode format
-- **Code**: Converted appropriate multi-parameter commands to splatting (skipping casual demos where splatting would reduce clarity)
-- **Commands**: Updated deprecated references (e.g., `Connect-DbaSqlInstance` → `Connect-DbaInstance`)
-- **Historical Content**: Preserved version numbers, download counts, and time-specific milestones as historical facts
-- **Ongoing Practices**: Updated content about code signing, security processes, and team operations
-
-### Key Insight
-
-This wasn't a simple "update all the things" job. It required an AI agent that could:
-
-- **Read and understand** a 300-line prompt with nested instructions and exceptions
-- **Exercise judgment** about what to change vs. preserve
-- **Maintain context** across hundreds of files
-- **Make nuanced decisions** about when splatting improves readability vs. when it's overkill
-
-This is exactly what *agentic CLIs* excel at — and what aitools makes scriptable and repeatable.
+The demo achieves ~80% automation accuracy, with remaining fixes due to legacy code quality. It illustrates how aitools combines PowerShell's predictability with AI's flexible reasoning.
 
 ---
 
 ## Contributing
 
-Pull requests are welcome!
+Pull requests are welcome. Please ensure:
 
 - Code follows PowerShell best practices
-- **ALL parameter passing uses splatting**
-- All functions include comment-based help
+- All parameter passing uses splatting
+- Functions include complete comment-based help
 - Changes are tested on Windows, Linux, and macOS
-- New tools can be added to `$ToolDefinitions` and are automatically available via dynamic parameter class mapping
+- New tools follow the existing `$ToolDefinitions` pattern
 
 ---
+
+## License
+
+[Include license here]
+
+---
+
+## Support
+
+- **Issues**: [GitHub Issues](https://github.com/potatoqualitee/aitools/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/potatoqualitee/aitools/discussions)
+- **Module Gallery**: [PowerShell Gallery](https://www.powershellgallery.com/packages/aitools)
