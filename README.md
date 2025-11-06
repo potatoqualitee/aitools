@@ -71,7 +71,7 @@ PSOpenAI is excellent for what it does. aitools is for when you need an AI to *e
 
 ### Requirements
 
-- PowerShell 7.0 or later
+- PowerShell 3+ or later
 - Windows, Linux, or macOS
 
 ### Install aitools
@@ -308,14 +308,7 @@ Pull requests are welcome. Please ensure:
 
 ---
 
-## License
-
-[Include license here]
-
----
-
 ## Support
 
 - **Issues**: [GitHub Issues](https://github.com/potatoqualitee/aitools/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/potatoqualitee/aitools/discussions)
 - **Module Gallery**: [PowerShell Gallery](https://www.powershellgallery.com/packages/aitools)
