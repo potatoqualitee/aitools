@@ -38,6 +38,10 @@ function Invoke-AITool {
         Run the command directly without capturing output or assigning to variables.
         Useful for interactive scenarios like Jupyter notebooks where output handling can cause issues.
 
+    .PARAMETER DelaySeconds
+        Number of seconds to wait after processing each file. Useful for rate limiting or spreading
+        API calls over time to manage credit usage (e.g., -DelaySeconds 10 for a 10-second delay).
+
     .EXAMPLE
         Get-ChildItem *.Tests.ps1 | Invoke-AITool -Prompt "Refactor from Pester v4 to v5"
 
@@ -88,7 +92,10 @@ function Invoke-AITool {
         [Parameter()]
         [string[]]$Attachment,
         [Parameter()]
-        [switch]$Raw
+        [switch]$Raw,
+        [Parameter()]
+        [ValidateRange(0, 3600)]
+        [int]$DelaySeconds = 0
     )
 
     begin {
@@ -1007,9 +1014,21 @@ function Invoke-AITool {
                     Write-PSFMessage -Level Verbose -Message "Restored location after processing file"
                 }
             }
+
+            # Apply delay after processing each file (if not the last file)
+            if ($DelaySeconds -gt 0 -and $fileIndex -lt $totalFiles) {
+                Write-PSFMessage -Level Verbose -Message "Waiting $DelaySeconds seconds before processing next file..."
+                Start-Sleep -Seconds $DelaySeconds
+            }
         } # End of foreach ($singleFile in $filesToProcess)
 
         Write-Progress -Activity "Processing with $currentTool" -Completed
+
+            # Apply delay between tools when using -Tool All (if not the last tool)
+            if ($DelaySeconds -gt 0 -and $toolsToRun.Count -gt 1 -and $currentTool -ne $toolsToRun[-1]) {
+                Write-PSFMessage -Level Verbose -Message "Waiting $DelaySeconds seconds before processing with next tool..."
+                Start-Sleep -Seconds $DelaySeconds
+            }
         } # End of foreach ($currentTool in $toolsToRun)
 
         Write-PSFMessage -Level Verbose -Message "All files processed"
