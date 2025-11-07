@@ -50,6 +50,8 @@ The problem with AI coding assistants isn't their capability — it's their inte
 - Handling the boring parts (installation, updates, configuration)
 - Tracking what changed for review before committing
 
+**BUT ALSO**: Because aitools processes each file in a fresh, non-interactive session, the AI produces incredibly consistent, high-quality output without the context drift or degradation that happens in long interactive conversations.
+
 ---
 
 ## How it differs from API wrappers
