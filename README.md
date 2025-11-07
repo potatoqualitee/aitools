@@ -16,7 +16,7 @@ aitools is a PowerShell module that lets you automate code refactoring, migratio
 
 ## What is aitools?
 
-aitools wraps *agentic CLI tools* — AI assistants that actually read, understand, and rewrite your code — making them scriptable and repeatable through PowerShell.
+aitools wraps *agentic CLI tools* — AI assistants that actually read, understand, and rewrite your code — making them scriptable and repeatable through PowerShell. Every run starts clean—no conversation drift, just quality output.
 
 **In 30 seconds:**
 
