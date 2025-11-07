@@ -16,7 +16,7 @@ aitools is a PowerShell module that lets you automate code refactoring, migratio
 
 ## What is aitools?
 
-aitools wraps *agentic CLI tools* — AI assistants that actually read, understand, and rewrite your code — making them scriptable and repeatable through PowerShell. Every run starts clean—no conversation drift, just quality output.
+aitools wraps *agentic CLI tools* (AI assistants that actually read, understand, and rewrite your code), making them scriptable and repeatable through PowerShell. Every run starts clean, with no conversation drift, just quality output.
 
 **In 30 seconds:**
 
@@ -37,7 +37,7 @@ That's it. aitools coordinates the AI, handles file I/O, tracks changes, and giv
 
 ## Why aitools exists
 
-The problem with AI coding assistants isn't their capability — it's their interface. Each CLI has different flags, installation steps, and quirks. When you need to process 100 files, you either:
+The problem with AI coding assistants isn't their capability, it's their interface. Each CLI has different flags, installation steps, and quirks. When you need to process 100 files, you either:
 
 1. Click through each one manually in an IDE
 2. Write brittle shell scripts that break when the CLI changes
@@ -115,7 +115,7 @@ Now any aitools command will use Claude Code unless you specify otherwise.
 Get-ChildItem ./tests/*.Tests.ps1 | Update-PesterTest
 ```
 
-This updates your Pester v4 tests to v5 syntax — handling BeforeAll/AfterAll blocks, Context/Describe changes, and parameter validation.
+This updates your Pester v4 tests to v5 syntax, handling BeforeAll/AfterAll blocks, Context/Describe changes, and parameter validation.
 
 ### Add documentation
 
@@ -163,9 +163,9 @@ Each tool has different strengths. Claude Code is the strongest coder but can st
 
 Every aitools operation follows the same pattern:
 
-1. **Input** — Provide files and a prompt
-2. **Processing** — AI reads, understands, and edits
-3. **Review** — You see diffs and decide to keep or discard
+1. **Input** - Provide files and a prompt
+2. **Processing** - AI reads, understands, and edits
+3. **Review** - You see diffs and decide to keep or discard
 
 This mirrors manual code review but scales to hundreds of files.
 
@@ -215,11 +215,11 @@ $params = @{
 Invoke-AITool @params
 ```
 
-This handles namespace changes, XML property renames, and layout differences — automatically refactoring the entire module.
+This handles namespace changes, XML property renames, and layout differences, automatically refactoring the entire module.
 
 ### Case Study: Updating dbatools.io Blog
 
-The [dbatools.io blog](https://dbatools.io) needed systematic updates: broken links, deprecated commands, outdated screenshots, and stale Twitter embeds. The challenge required judgment, not mechanical find-replace.
+The [dbatools.io blog](https://dbatools.io) needed systematic updates to fix broken links, deprecated commands, outdated screenshots, and stale Twitter embeds. The challenge required judgment, not mechanical find-replace.
 
 **The requirements:**
 
@@ -290,11 +290,11 @@ Useful for debugging prompts or resuming interrupted batches.
 
 The included Jupyter notebook (`demo.ipynb`) walks through migrating dbatools' 3,500+ Pester tests from v4 to v5. It shows:
 
-1. **Setup** — Import module, configure defaults, prepare workspace
-2. **Execution** — Open a real test file and run `Update-PesterTest`
-3. **Review** — Examine structural changes, parameter updates, style enforcement
+1. **Setup** - Import module, configure defaults, prepare workspace
+2. **Execution** - Open a real test file and run `Update-PesterTest`
+3. **Review** - Examine structural changes, parameter updates, style enforcement
 
-The demo achieves ~80% automation accuracy, with remaining fixes due to legacy code quality. It illustrates how aitools combines PowerShell's predictability with AI's flexible reasoning.
+The demo achieves ~80% automation accuracy, with remaining fixes needed due to legacy code quality. It illustrates how aitools combines PowerShell's predictability with AI's flexible reasoning.
 
 ---
 
