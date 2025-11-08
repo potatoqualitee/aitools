@@ -42,6 +42,21 @@ function Invoke-AITool {
         Number of seconds to wait after processing each file. Useful for rate limiting or spreading
         API calls over time to manage credit usage (e.g., -DelaySeconds 10 for a 10-second delay).
 
+    .PARAMETER DisableRetry
+        Disable automatic retry with exponential backoff. By default, failed operations are retried
+        with delays of 2, 4, 8, 16, 32, 64 minutes until the cumulative delay exceeds MaxRetryMinutes.
+        Use this switch to disable retry and fail immediately on errors.
+
+    .PARAMETER MaxRetryMinutes
+        Maximum total time in minutes for all retry delays combined. Default is 240 (4 hours).
+        Only applies when retry is enabled (default behavior).
+
+    .PARAMETER SkipModified
+        Skip files that have been changed in the current branch compared to upstream. Useful for resuming
+        batch operations after hitting rate limits - prevents reprocessing files that were already changed
+        by the AI tool. Includes both uncommitted changes and commits unique to this branch.
+        Only works in git repositories with an upstream branch configured.
+
     .EXAMPLE
         Get-ChildItem *.Tests.ps1 | Invoke-AITool -Prompt "Refactor from Pester v4 to v5"
 
@@ -71,6 +86,24 @@ function Invoke-AITool {
     .EXAMPLE
         Invoke-AITool -Path "script.ps1" -Prompt "Add error handling" -Tool All
         Runs the same prompt against all installed tools sequentially.
+
+    .EXAMPLE
+        Invoke-AITool -Path "MyFile.ps1" -Prompt "Refactor code"
+        Processes the file with automatic retry on failure using exponential backoff (2, 4, 8, 16, 32, 64 mins)
+        for up to 4 hours total (default behavior).
+
+    .EXAMPLE
+        Invoke-AITool -Path "MyFile.ps1" -Prompt "Refactor code" -DisableRetry
+        Processes the file without retry - fails immediately on error.
+
+    .EXAMPLE
+        Invoke-AITool -Path "MyFile.ps1" -Prompt "Refactor code" -MaxRetryMinutes 60
+        Processes the file with retry enabled but only retry for up to 1 hour total delay time.
+
+    .EXAMPLE
+        Get-ChildItem *.ps1 | Invoke-AITool -Prompt "Add error handling" -SkipModified
+        Processes only files that haven't been changed in this branch, skipping files with changes that
+        differ from upstream (including both uncommitted and committed changes).
     #>
     [CmdletBinding()]
     param(
@@ -95,13 +128,66 @@ function Invoke-AITool {
         [switch]$Raw,
         [Parameter()]
         [ValidateRange(0, 3600)]
-        [int]$DelaySeconds = 0
+        [int]$DelaySeconds = 0,
+        [Parameter()]
+        [switch]$DisableRetry,
+        [Parameter()]
+        [ValidateRange(1, 1440)]  # 1 minute to 24 hours
+        [int]$MaxRetryMinutes = 240,
+        [Parameter()]
+        [switch]$SkipModified
     )
 
     begin {
         # Save original location for cleanup in finally block
         $script:originalLocation = Get-Location
         Write-PSFMessage -Level Verbose -Message "Saved original location: $script:originalLocation"
+
+        # Get list of modified files from git if -SkipModified is specified
+        $gitModifiedFiles = @()
+        if ($SkipModified) {
+            try {
+                # Check if we're in a git repository
+                $gitStatus = git rev-parse --is-inside-work-tree 2>&1
+                if ($LASTEXITCODE -eq 0) {
+                    Write-PSFMessage -Level Verbose -Message "Git repository detected, checking for files changed from upstream"
+
+                    # Get the remote's default branch (what origin/HEAD points to)
+                    $upstreamBranch = git symbolic-ref refs/remotes/origin/HEAD 2>&1 | ForEach-Object { $_ -replace 'refs/remotes/', '' }
+                    if ($LASTEXITCODE -ne 0) {
+                        Write-PSFMessage -Level Warning -Message "Could not determine remote default branch. -SkipModified will be skipped."
+                        $gitModifiedFiles = @()
+                    } else {
+                        Write-PSFMessage -Level Verbose -Message "Using remote default branch: $upstreamBranch"
+
+                        # Get files changed compared to remote default branch (includes uncommitted AND committed changes in this branch)
+                        # Using .. (two dots) to show all changes since this branch diverged from the remote default
+                        $gitDiffOutput = git diff --name-only "$upstreamBranch..HEAD" 2>&1
+
+                        if ($LASTEXITCODE -eq 0 -and $gitDiffOutput) {
+                            $gitModifiedFiles = $gitDiffOutput | ForEach-Object {
+                                $filename = $_.Trim()
+                                if ($filename) {
+                                    # Resolve to absolute path
+                                    $resolvedPath = Join-Path (Get-Location) $filename | Resolve-Path -ErrorAction SilentlyContinue
+                                    if ($resolvedPath) {
+                                        # Normalize to forward slashes for consistency
+                                        $resolvedPath.Path -replace '\\', '/'
+                                    }
+                                }
+                            } | Where-Object { $_ }
+                            Write-PSFMessage -Level Verbose -Message "Found $($gitModifiedFiles.Count) file(s) changed from upstream"
+                        } else {
+                            Write-PSFMessage -Level Verbose -Message "No files changed from upstream"
+                        }
+                    }
+                } else {
+                    Write-PSFMessage -Level Warning -Message "-SkipModified specified but not in a git repository. Parameter will be ignored."
+                }
+            } catch {
+                Write-PSFMessage -Level Warning -Message "Failed to check git diff: $_. -SkipModified will be ignored."
+            }
+        }
 
         # Set default prompt if none provided
         if (-not $Prompt) {
@@ -266,6 +352,13 @@ function Invoke-AITool {
             if ($resolvedPath) {
                 # Normalize path to use forward slashes for cross-platform CLI compatibility
                 $normalizedPath = $resolvedPath.Path -replace '\\', '/'
+
+                # Skip if file is modified in git and -SkipModified is specified
+                if ($SkipModified -and $gitModifiedFiles -contains $normalizedPath) {
+                    Write-PSFMessage -Level Verbose -Message "Skipping modified file: $normalizedPath"
+                    continue
+                }
+
                 $filesToProcess += $normalizedPath
                 Write-PSFMessage -Level Debug -Message "Queued file: $normalizedPath"
             } else {
@@ -494,8 +587,12 @@ function Invoke-AITool {
                     [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
                     $env:PYTHONIOENCODING = 'utf-8'
 
-                    # Redirect to temp file instead of capturing directly
-                    & $toolDef.Command @arguments *>&1 | Out-File -FilePath $tempOutputFile -Encoding utf8
+                    # Wrap tool execution with retry logic
+                    $executionScriptBlock = {
+                        & $toolDef.Command @arguments *>&1 | Out-File -FilePath $tempOutputFile -Encoding utf8
+                    }.GetNewClosure()
+
+                    Invoke-WithRetry -ScriptBlock $executionScriptBlock -EnableRetry:(-not $DisableRetry) -MaxTotalMinutes $MaxRetryMinutes -Context "Aider chat mode"
 
                     # Read output from temp file
                     $capturedOutput = Get-Content -Path $tempOutputFile -Raw -Encoding utf8
@@ -525,8 +622,12 @@ function Invoke-AITool {
                 } elseif ($currentTool -eq 'Codex') {
                     Write-PSFMessage -Level Verbose -Message "Executing Codex in chat mode (prompt in arguments)"
 
-                    # Redirect to temp file instead of capturing directly
-                    & $toolDef.Command @arguments *>&1 | Out-File -FilePath $tempOutputFile -Encoding utf8
+                    # Wrap tool execution with retry logic
+                    $executionScriptBlock = {
+                        & $toolDef.Command @arguments *>&1 | Out-File -FilePath $tempOutputFile -Encoding utf8
+                    }.GetNewClosure()
+
+                    Invoke-WithRetry -ScriptBlock $executionScriptBlock -EnableRetry:(-not $DisableRetry) -MaxTotalMinutes $MaxRetryMinutes -Context "Codex chat mode"
 
                     # Read output from temp file
                     $capturedOutput = Get-Content -Path $tempOutputFile -Raw -Encoding utf8
@@ -553,8 +654,12 @@ function Invoke-AITool {
                 } elseif ($currentTool -eq 'Cursor') {
                     Write-PSFMessage -Level Verbose -Message "Executing Cursor in chat mode (prompt in arguments)"
 
-                    # Redirect to temp file instead of capturing directly
-                    & $toolDef.Command @arguments *>&1 | Out-File -FilePath $tempOutputFile -Encoding utf8
+                    # Wrap tool execution with retry logic
+                    $executionScriptBlock = {
+                        & $toolDef.Command @arguments *>&1 | Out-File -FilePath $tempOutputFile -Encoding utf8
+                    }.GetNewClosure()
+
+                    Invoke-WithRetry -ScriptBlock $executionScriptBlock -EnableRetry:(-not $DisableRetry) -MaxTotalMinutes $MaxRetryMinutes -Context "Cursor chat mode"
 
                     # Read output from temp file
                     $capturedOutput = Get-Content -Path $tempOutputFile -Raw -Encoding utf8
@@ -581,8 +686,12 @@ function Invoke-AITool {
                 } else {
                     Write-PSFMessage -Level Verbose -Message "Piping prompt to $currentTool in chat mode"
 
-                    # Redirect to temp file instead of capturing directly
-                    $fullPrompt | & $toolDef.Command @arguments *>&1 | Out-File -FilePath $tempOutputFile -Encoding utf8
+                    # Wrap tool execution with retry logic
+                    $executionScriptBlock = {
+                        $fullPrompt | & $toolDef.Command @arguments *>&1 | Out-File -FilePath $tempOutputFile -Encoding utf8
+                    }.GetNewClosure()
+
+                    Invoke-WithRetry -ScriptBlock $executionScriptBlock -EnableRetry:(-not $DisableRetry) -MaxTotalMinutes $MaxRetryMinutes -Context "$currentTool chat mode"
 
                     # Read output from temp file
                     $capturedOutput = Get-Content -Path $tempOutputFile -Raw -Encoding utf8
@@ -878,8 +987,12 @@ function Invoke-AITool {
                     [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
                     $env:PYTHONIOENCODING = 'utf-8'
 
-                    # Redirect to temp file instead of capturing directly
-                    & $toolDef.Command @arguments *>&1 | Out-File -FilePath $tempOutputFile -Encoding utf8
+                    # Wrap tool execution with retry logic
+                    $executionScriptBlock = {
+                        & $toolDef.Command @arguments *>&1 | Out-File -FilePath $tempOutputFile -Encoding utf8
+                    }.GetNewClosure()
+
+                    Invoke-WithRetry -ScriptBlock $executionScriptBlock -EnableRetry:(-not $DisableRetry) -MaxTotalMinutes $MaxRetryMinutes -Context "Aider processing $singleFile"
 
                     # Read output from temp file
                     $capturedOutput = Get-Content -Path $tempOutputFile -Raw -Encoding utf8
@@ -910,8 +1023,12 @@ function Invoke-AITool {
                 } elseif ($currentTool -eq 'Codex') {
                     Write-PSFMessage -Level Verbose -Message "Executing Codex (prompt in arguments)"
 
-                    # Redirect to temp file instead of capturing directly
-                    & $toolDef.Command @arguments *>&1 | Out-File -FilePath $tempOutputFile -Encoding utf8
+                    # Wrap tool execution with retry logic
+                    $executionScriptBlock = {
+                        & $toolDef.Command @arguments *>&1 | Out-File -FilePath $tempOutputFile -Encoding utf8
+                    }.GetNewClosure()
+
+                    Invoke-WithRetry -ScriptBlock $executionScriptBlock -EnableRetry:(-not $DisableRetry) -MaxTotalMinutes $MaxRetryMinutes -Context "Codex processing $singleFile"
 
                     # Read output from temp file
                     $capturedOutput = Get-Content -Path $tempOutputFile -Raw -Encoding utf8
@@ -938,8 +1055,12 @@ function Invoke-AITool {
                 } elseif ($currentTool -eq 'Cursor') {
                     Write-PSFMessage -Level Verbose -Message "Executing Cursor (prompt in arguments)"
 
-                    # Redirect to temp file instead of capturing directly
-                    & $toolDef.Command @arguments *>&1 | Out-File -FilePath $tempOutputFile -Encoding utf8
+                    # Wrap tool execution with retry logic
+                    $executionScriptBlock = {
+                        & $toolDef.Command @arguments *>&1 | Out-File -FilePath $tempOutputFile -Encoding utf8
+                    }.GetNewClosure()
+
+                    Invoke-WithRetry -ScriptBlock $executionScriptBlock -EnableRetry:(-not $DisableRetry) -MaxTotalMinutes $MaxRetryMinutes -Context "Cursor processing $singleFile"
 
                     # Read output from temp file
                     $capturedOutput = Get-Content -Path $tempOutputFile -Raw -Encoding utf8
@@ -966,8 +1087,12 @@ function Invoke-AITool {
                 } else {
                         Write-PSFMessage -Level Verbose -Message "Piping combined prompt to $currentTool"
 
-                    # Redirect to temp file instead of capturing directly
-                    $fullPrompt | & $toolDef.Command @arguments *>&1 | Out-File -FilePath $tempOutputFile -Encoding utf8
+                    # Wrap tool execution with retry logic
+                    $executionScriptBlock = {
+                        $fullPrompt | & $toolDef.Command @arguments *>&1 | Out-File -FilePath $tempOutputFile -Encoding utf8
+                    }.GetNewClosure()
+
+                    Invoke-WithRetry -ScriptBlock $executionScriptBlock -EnableRetry:(-not $DisableRetry) -MaxTotalMinutes $MaxRetryMinutes -Context "$currentTool processing $singleFile"
 
                     # Read output from temp file
                     $capturedOutput = Get-Content -Path $tempOutputFile -Raw -Encoding utf8
