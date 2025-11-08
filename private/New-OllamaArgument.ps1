@@ -29,17 +29,29 @@ function New-OllamaArgument {
 
     # Build the prompt message
     if ($TargetFile) {
-        Write-PSFMessage -Level Verbose -Message "Target file: $TargetFile"
+        # Validate and resolve the target file path
+        $resolvedTargetFile = $null
+        if (Test-Path $TargetFile) {
+            $resolvedTargetFile = (Resolve-Path $TargetFile).Path
+            Write-PSFMessage -Level Verbose -Message "Target file: $resolvedTargetFile (resolved from: $TargetFile)"
+        } else {
+            Write-PSFMessage -Level Warning -Message "Target file path not found: $TargetFile"
+        }
+
         # Read the file content to include in the prompt
-        try {
-            $fileContent = Get-Content -Path $TargetFile -Raw -ErrorAction Stop
-            if ($Message) {
-                $fullMessage = "$Message`n`nFile content:`n`n$fileContent"
-            } else {
-                $fullMessage = "Analyze and improve this file:`n`n$fileContent"
+        if ($resolvedTargetFile) {
+            try {
+                $fileContent = Get-Content -Path $resolvedTargetFile -Raw -ErrorAction Stop
+                if ($Message) {
+                    $fullMessage = "$Message`n`nFile content:`n`n$fileContent"
+                } else {
+                    $fullMessage = "Analyze and improve this file:`n`n$fileContent"
+                }
+            } catch {
+                Write-PSFMessage -Level Warning -Message "Could not read target file: $_"
+                $fullMessage = $Message
             }
-        } catch {
-            Write-PSFMessage -Level Warning -Message "Could not read target file: $_"
+        } else {
             $fullMessage = $Message
         }
     } elseif ($Message) {

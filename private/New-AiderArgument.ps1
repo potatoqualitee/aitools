@@ -56,8 +56,15 @@ function New-AiderArgument {
     if ($ContextFiles) {
         Write-PSFMessage -Level Verbose -Message "Adding $($ContextFiles.Count) context file(s)"
         foreach ($ctx in $ContextFiles) {
-            Write-PSFMessage -Level Verbose -Message "Context file: $ctx"
-            $arguments += '--read', $ctx
+            # Validate and resolve the context file path
+            if (Test-Path $ctx) {
+                # Resolve to full path
+                $resolvedCtx = (Resolve-Path $ctx).Path
+                Write-PSFMessage -Level Verbose -Message "Context file: $resolvedCtx (resolved from: $ctx)"
+                $arguments += '--read', $resolvedCtx
+            } else {
+                Write-PSFMessage -Level Warning -Message "Context file path not found and will be skipped: $ctx"
+            }
         }
     }
 

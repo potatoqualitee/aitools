@@ -44,16 +44,24 @@ function New-GeminiArgument {
     }
 
     if ($TargetFile) {
-        Write-PSFMessage -Level Verbose -Message "Target file: $TargetFile"
+        # Validate and resolve the target file path
+        if (Test-Path $TargetFile) {
+            $resolvedTargetFile = (Resolve-Path $TargetFile).Path
+            Write-PSFMessage -Level Verbose -Message "Target file: $resolvedTargetFile (resolved from: $TargetFile)"
 
-        # Extract parent directory to add to workspace for cross-repo access
-        $targetDir = Split-Path (Split-Path $TargetFile -Parent) -Parent
-        if ($targetDir -and (Test-Path $targetDir)) {
-            Write-PSFMessage -Level Verbose -Message "Adding parent directory to workspace: $targetDir"
-            $arguments += '--include-directories', $targetDir
+            # Extract parent directory to add to workspace for cross-repo access
+            $targetDir = Split-Path (Split-Path $resolvedTargetFile -Parent) -Parent
+            if ($targetDir -and (Test-Path $targetDir)) {
+                Write-PSFMessage -Level Verbose -Message "Adding parent directory to workspace: $targetDir"
+                $arguments += '--include-directories', $targetDir
+            }
+
+            $arguments += $resolvedTargetFile
+        } else {
+            Write-PSFMessage -Level Warning -Message "Target file path not found: $TargetFile"
+            # Still add the path - let Gemini handle the error
+            $arguments += $TargetFile
         }
-
-        $arguments += $TargetFile
     }
 
     Write-PSFMessage -Level Verbose -Message "Gemini arguments built: $($arguments -join ' ')"

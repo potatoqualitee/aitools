@@ -5,7 +5,9 @@ function New-CopilotArgument {
         [string]$Message,
         [string]$Model,
         [bool]$UsePermissionBypass,
-        [string]$WorkingDirectory
+        [string]$WorkingDirectory,
+        [string]$PromptFilePath,
+        [string[]]$ContextFilePaths
     )
 
     Write-PSFMessage -Level Verbose -Message "Building GitHub Copilot CLI arguments..."
@@ -16,21 +18,59 @@ function New-CopilotArgument {
     $arguments += '--allow-all-tools'
 
     # Add directory access first (must come before other flags for proper permission handling)
+    # Collect unique directories to avoid duplicates
+    $directoriesToAdd = @()
+
     if ($WorkingDirectory) {
         Write-PSFMessage -Level Verbose -Message "Adding working directory: $WorkingDirectory"
-        $arguments += '--add-dir', $WorkingDirectory
+        $directoriesToAdd += $WorkingDirectory
     }
 
     if ($TargetFile) {
         $parentDir = Split-Path -Parent $TargetFile
-        Write-PSFMessage -Level Verbose -Message "Adding directory: $parentDir"
-        $arguments += '--add-dir', $parentDir
+        Write-PSFMessage -Level Verbose -Message "Adding target file parent directory: $parentDir"
+        $directoriesToAdd += $parentDir
 
         if (-not (Test-Path $parentDir/.git)) {
             $grandparentDir = Split-Path -Parent $parentDir
-            Write-PSFMessage -Level Verbose -Message "Adding directory: $grandparentDir"
-            $arguments += '--add-dir', $grandparentDir
+            Write-PSFMessage -Level Verbose -Message "Adding target file grandparent directory: $grandparentDir"
+            $directoriesToAdd += $grandparentDir
         }
+    }
+
+    # Add parent directories from prompt file
+    if ($PromptFilePath) {
+        if (Test-Path $PromptFilePath) {
+            # Resolve to full path
+            $resolvedPromptFile = (Resolve-Path $PromptFilePath).Path
+            $promptParentDir = Split-Path -Parent $resolvedPromptFile
+            Write-PSFMessage -Level Verbose -Message "Adding prompt file parent directory: $promptParentDir (resolved from: $PromptFilePath)"
+            $directoriesToAdd += $promptParentDir
+        } else {
+            Write-PSFMessage -Level Warning -Message "Prompt file path not found and will be skipped: $PromptFilePath"
+        }
+    }
+
+    # Add parent directories from context files
+    if ($ContextFilePaths -and $ContextFilePaths.Count -gt 0) {
+        foreach ($contextFile in $ContextFilePaths) {
+            # Validate and resolve the context file path
+            if (Test-Path $contextFile) {
+                # Resolve to full path
+                $resolvedContextFile = (Resolve-Path $contextFile).Path
+                $contextParentDir = Split-Path -Parent $resolvedContextFile
+                Write-PSFMessage -Level Verbose -Message "Adding context file parent directory: $contextParentDir (resolved from: $contextFile)"
+                $directoriesToAdd += $contextParentDir
+            } else {
+                Write-PSFMessage -Level Warning -Message "Context file path not found and will be skipped: $contextFile"
+            }
+        }
+    }
+
+    # Add unique directories to arguments
+    $uniqueDirs = $directoriesToAdd | Select-Object -Unique
+    foreach ($dir in $uniqueDirs) {
+        $arguments += '--add-dir', $dir
     }
 
     if ($PSCmdlet.MyInvocation.BoundParameters['Debug']) {

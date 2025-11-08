@@ -225,9 +225,12 @@ function Invoke-AITool {
         }
 
         # Process Prompt parameter - detect if it's a file object, file path, file pattern, or string
+        # Track prompt file path for copilot --add-dir support
+        $promptFilePath = $null
         $promptText = if ($Prompt -is [System.IO.FileInfo] -or $Prompt -is [System.IO.FileSystemInfo]) {
             Write-PSFMessage -Level Verbose -Message "Prompt is a file object: $($Prompt.FullName)"
             if (Test-Path $Prompt.FullName) {
+                $promptFilePath = $Prompt.FullName
                 $content = Get-Content $Prompt.FullName -Raw
                 # Append file path to content
                 "$content`n`n(File: $($Prompt.FullName))"
@@ -243,6 +246,8 @@ function Invoke-AITool {
 
                 if ($matchedFiles) {
                     Write-PSFMessage -Level Verbose -Message "Found $($matchedFiles.Count) file(s) matching pattern: $Prompt"
+                    # For multiple files, use the first one as the prompt file path
+                    $promptFilePath = $matchedFiles[0].FullName
                     # Combine content from all matched files
                     $combinedContent = ($matchedFiles | ForEach-Object {
                         $fileContent = Get-Content $_.FullName -Raw
@@ -257,6 +262,7 @@ function Invoke-AITool {
             # Check if it's a file path
             elseif ((Test-Path $Prompt -ErrorAction SilentlyContinue) -and -not (Test-Path $Prompt -PathType Container)) {
                 Write-PSFMessage -Level Verbose -Message "Prompt is a file path: $Prompt"
+                $promptFilePath = $Prompt
                 $content = Get-Content $Prompt -Raw
                 # Append file path to content
                 "$content`n`n(File: $Prompt)"
@@ -473,6 +479,8 @@ function Invoke-AITool {
                         Model               = $modelToUse
                         UsePermissionBypass = $permissionBypass
                         WorkingDirectory    = (Get-Location).Path
+                        PromptFilePath      = $promptFilePath
+                        ContextFilePaths    = $contextFiles
                         Verbose             = $VerbosePreference
                         Debug               = $DebugPreference
                     }
@@ -861,6 +869,8 @@ function Invoke-AITool {
                         Model               = $modelToUse
                         UsePermissionBypass = $permissionBypass
                         WorkingDirectory    = $targetDirectory
+                        PromptFilePath      = $promptFilePath
+                        ContextFilePaths    = $contextFiles
                         Verbose             = $VerbosePreference
                         Debug               = $DebugPreference
                     }

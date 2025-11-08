@@ -41,8 +41,15 @@ function New-CursorArgument {
     # Add context files with --context-file flag
     if ($ContextFiles) {
         foreach ($ctxFile in $ContextFiles) {
-            Write-PSFMessage -Level Verbose -Message "Adding context file: $ctxFile"
-            $arguments += '--context-file', $ctxFile
+            # Validate and resolve the context file path
+            if (Test-Path $ctxFile) {
+                # Resolve to full path
+                $resolvedCtxFile = (Resolve-Path $ctxFile).Path
+                Write-PSFMessage -Level Verbose -Message "Adding context file: $resolvedCtxFile (resolved from: $ctxFile)"
+                $arguments += '--context-file', $resolvedCtxFile
+            } else {
+                Write-PSFMessage -Level Warning -Message "Context file path not found and will be skipped: $ctxFile"
+            }
         }
     }
 
