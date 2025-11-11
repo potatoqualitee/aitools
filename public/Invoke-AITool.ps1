@@ -52,9 +52,12 @@ function Invoke-AITool {
         Only applies when retry is enabled (default behavior).
 
     .PARAMETER SkipModified
-        Skip files that have been changed in the current branch compared to upstream. Useful for resuming
-        batch operations after hitting rate limits - prevents reprocessing files that were already changed
-        by the AI tool. Includes both uncommitted changes and commits unique to this branch.
+        Skip files that have been modified in the working tree or differ from the upstream branch.
+        Useful for resuming batch operations after hitting rate limits - prevents reprocessing files
+        that were already changed by the AI tool. Includes:
+        - Uncommitted working tree changes (modified files not yet staged)
+        - Staged changes (files added to the index)
+        - Committed but not pushed changes (commits unique to this branch)
         Only works in git repositories with an upstream branch configured.
 
     .EXAMPLE
@@ -102,8 +105,8 @@ function Invoke-AITool {
 
     .EXAMPLE
         Get-ChildItem *.ps1 | Invoke-AITool -Prompt "Add error handling" -SkipModified
-        Processes only files that haven't been changed in this branch, skipping files with changes that
-        differ from upstream (including both uncommitted and committed changes).
+        Processes only files that haven't been modified, skipping files with uncommitted changes,
+        staged changes, or committed but not pushed changes.
     #>
     [CmdletBinding()]
     param(
@@ -148,7 +151,7 @@ function Invoke-AITool {
         if ($SkipModified) {
             try {
                 # Check if we're in a git repository
-                $gitStatus = git rev-parse --is-inside-work-tree 2>&1
+                $null = git rev-parse --is-inside-work-tree 2>&1
                 if ($LASTEXITCODE -eq 0) {
                     Write-PSFMessage -Level Verbose -Message "Git repository detected, checking for files changed from upstream"
 
@@ -160,12 +163,36 @@ function Invoke-AITool {
                     } else {
                         Write-PSFMessage -Level Verbose -Message "Using remote default branch: $upstreamBranch"
 
-                        # Get files changed compared to remote default branch (includes uncommitted AND committed changes in this branch)
-                        # Using .. (two dots) to show all changes since this branch diverged from the remote default
-                        $gitDiffOutput = git diff --name-only "$upstreamBranch..HEAD" 2>&1
+                        # Get ALL modified files:
+                        # 1. Uncommitted working tree changes (git diff --name-only)
+                        # 2. Staged changes (git diff --name-only --cached)
+                        # 3. Committed but not pushed changes (git diff --name-only upstream..HEAD)
+                        $allModifiedFiles = @()
 
-                        if ($LASTEXITCODE -eq 0 -and $gitDiffOutput) {
-                            $gitModifiedFiles = $gitDiffOutput | ForEach-Object {
+                        # Get uncommitted working tree changes
+                        $workingTreeChanges = git diff --name-only 2>&1 | Where-Object { $_ -is [string] }
+                        if ($LASTEXITCODE -eq 0 -and $workingTreeChanges) {
+                            $allModifiedFiles += $workingTreeChanges
+                            Write-PSFMessage -Level Verbose -Message "Found $(@($workingTreeChanges).Count) uncommitted working tree change(s)"
+                        }
+
+                        # Get staged changes
+                        $stagedChanges = git diff --name-only --cached 2>&1 | Where-Object { $_ -is [string] }
+                        if ($LASTEXITCODE -eq 0 -and $stagedChanges) {
+                            $allModifiedFiles += $stagedChanges
+                            Write-PSFMessage -Level Verbose -Message "Found $(@($stagedChanges).Count) staged change(s)"
+                        }
+
+                        # Get committed but not pushed changes
+                        $committedChanges = git diff --name-only "$upstreamBranch..HEAD" 2>&1 | Where-Object { $_ -is [string] }
+                        if ($LASTEXITCODE -eq 0 -and $committedChanges) {
+                            $allModifiedFiles += $committedChanges
+                            Write-PSFMessage -Level Verbose -Message "Found $(@($committedChanges).Count) committed but not pushed change(s)"
+                        }
+
+                        if ($allModifiedFiles.Count -gt 0) {
+                            # Remove duplicates and resolve to absolute paths
+                            $gitModifiedFiles = $allModifiedFiles | Select-Object -Unique | ForEach-Object {
                                 $filename = $_.Trim()
                                 if ($filename) {
                                     # Resolve to absolute path
@@ -176,9 +203,9 @@ function Invoke-AITool {
                                     }
                                 }
                             } | Where-Object { $_ }
-                            Write-PSFMessage -Level Verbose -Message "Found $($gitModifiedFiles.Count) file(s) changed from upstream"
+                            Write-PSFMessage -Level Verbose -Message "Total unique files to skip: $($gitModifiedFiles.Count)"
                         } else {
-                            Write-PSFMessage -Level Verbose -Message "No files changed from upstream"
+                            Write-PSFMessage -Level Verbose -Message "No modified files found"
                         }
                     }
                 } else {
