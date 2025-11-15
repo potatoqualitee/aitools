@@ -1,10 +1,20 @@
 function Invoke-WithRetry {
     <#
     .SYNOPSIS
-        Executes a scriptblock with exponential backoff retry logic.
+        Executes a scriptblock with exponential backoff retry logic for transient errors.
 
     .DESCRIPTION
         Wraps execution of a scriptblock with automatic retry capability using exponential backoff.
+        Only retries on transient/retryable errors such as:
+        - Timeouts
+        - Rate limits (429 Too Many Requests)
+        - Server errors (500, 502, 503, 504)
+        - Connection/network issues
+        - Quota/usage limits
+        - Service overload/capacity issues
+
+        Non-retryable errors (e.g., invalid arguments, file not found, permission denied) fail immediately.
+
         Retries with delays of 2, 4, 8, 16, 32, 64 minutes until the cumulative delay would exceed
         the maximum total time (default 240 minutes / 4 hours).
 
@@ -70,6 +80,48 @@ function Invoke-WithRetry {
             return $result
         }
 
+        # Determine if error is retryable by examining the output
+        $isRetryable = $false
+        $errorReason = "unknown error"
+
+        if ($result) {
+            $resultText = $result | Out-String
+
+            # Check for common retryable error patterns
+            if ($resultText -match '(?i)(timeout|timed out|time out)') {
+                $isRetryable = $true
+                $errorReason = "timeout"
+            }
+            elseif ($resultText -match '(?i)(429|too many requests|rate limit)') {
+                $isRetryable = $true
+                $errorReason = "rate limit"
+            }
+            elseif ($resultText -match '(?i)(500|502|503|504|internal server error|bad gateway|service unavailable|gateway timeout)') {
+                $isRetryable = $true
+                $errorReason = "server error"
+            }
+            elseif ($resultText -match '(?i)(connection|network|socket|refused|reset|unreachable)') {
+                $isRetryable = $true
+                $errorReason = "connection issue"
+            }
+            elseif ($resultText -match '(?i)(quota|usage limit|insufficient credits)') {
+                $isRetryable = $true
+                $errorReason = "quota/usage limit"
+            }
+            elseif ($resultText -match '(?i)(overloaded|capacity)') {
+                $isRetryable = $true
+                $errorReason = "service overload"
+            }
+        }
+
+        # If error is not retryable, fail immediately
+        if (-not $isRetryable) {
+            $totalElapsed = [Math]::Round(((Get-Date) - $startTime).TotalMinutes, 2)
+            Write-PSFMessage -Level Error -Message "[$Context] Attempt $attemptNumber FAILED with exit code $exitCode (non-retryable error). Total elapsed: $totalElapsed minutes"
+            Write-PSFMessage -Level Verbose -Message "[$Context] Error is not retryable (not a timeout, rate limit, server error, or connection issue). Failing immediately."
+            return $result
+        }
+
         # Calculate next delay using exponential backoff: 2^n minutes where n is attempt number
         $nextDelayMinutes = $InitialDelayMinutes * [Math]::Pow(2, $attemptNumber - 1)
 
@@ -85,7 +137,7 @@ function Invoke-WithRetry {
 
         # Log retry with detailed information
         $totalElapsed = [Math]::Round(((Get-Date) - $startTime).TotalMinutes, 2)
-        Write-PSFMessage -Level Warning -Message "[$Context] Attempt $attemptNumber FAILED with exit code $exitCode"
+        Write-PSFMessage -Level Warning -Message "[$Context] Attempt $attemptNumber FAILED with exit code $exitCode (retryable: $errorReason)"
         Write-PSFMessage -Level Important -Message "[$Context] Will retry in $nextDelayMinutes minutes (cumulative delay: $projectedTotal minutes, total elapsed: $totalElapsed minutes)"
 
         # Wait for the delay period

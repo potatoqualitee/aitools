@@ -43,9 +43,11 @@ function Invoke-AITool {
         API calls over time to manage credit usage (e.g., -DelaySeconds 10 for a 10-second delay).
 
     .PARAMETER DisableRetry
-        Disable automatic retry with exponential backoff. By default, failed operations are retried
-        with delays of 2, 4, 8, 16, 32, 64 minutes until the cumulative delay exceeds MaxRetryMinutes.
-        Use this switch to disable retry and fail immediately on errors.
+        Disable automatic retry with exponential backoff. By default, transient errors (timeouts,
+        rate limits, server errors, connection issues, quota/usage limits) are retried with delays
+        of 2, 4, 8, 16, 32, 64 minutes until the cumulative delay exceeds MaxRetryMinutes.
+        Non-retryable errors (e.g., invalid arguments, file not found) fail immediately.
+        Use this switch to disable retry and fail immediately on all errors.
 
     .PARAMETER MaxRetryMinutes
         Maximum total time in minutes for all retry delays combined. Default is 240 (4 hours).
@@ -92,8 +94,8 @@ function Invoke-AITool {
 
     .EXAMPLE
         Invoke-AITool -Path "MyFile.ps1" -Prompt "Refactor code"
-        Processes the file with automatic retry on failure using exponential backoff (2, 4, 8, 16, 32, 64 mins)
-        for up to 4 hours total (default behavior).
+        Processes the file with automatic retry on transient errors (timeouts, rate limits, server errors)
+        using exponential backoff (2, 4, 8, 16, 32, 64 mins) for up to 4 hours total (default behavior).
 
     .EXAMPLE
         Invoke-AITool -Path "MyFile.ps1" -Prompt "Refactor code" -DisableRetry
