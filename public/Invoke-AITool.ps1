@@ -31,11 +31,12 @@ function Invoke-AITool {
         Overrides configured default.
 
     .PARAMETER Attachment
-        Optional image file(s) to attach to the prompt. Only supported by Codex.
+        Optional image file(s) to attach to the prompt. Currently only used by Codex (via -i flag).
         Accepts common image formats (png, jpg, jpeg, gif, bmp, webp, svg).
-        Note: When piping image files via Get-ChildItem, they are automatically treated as attachments.
-        Codex can see and analyze images but cannot directly edit them - it can write scripts or call
-        tools (Python/PIL, ImageMagick, etc.) to manipulate images.
+        Note: When piping image files with -Tool Codex, they are automatically treated as attachments.
+        For other tools, piped images are processed as regular files (tools with vision can analyze them).
+        Vision models can see and analyze images but cannot directly edit them - they can write scripts
+        or call tools (Python/PIL, ImageMagick, etc.) to manipulate images.
 
     .PARAMETER Raw
         Run the command directly without capturing output or assigning to variables.
@@ -115,16 +116,19 @@ function Invoke-AITool {
 
     .EXAMPLE
         Get-ChildItem diagram.png | Invoke-AITool -Prompt "Describe what's in this image" -Tool Codex
-        Pipes an image file which is automatically detected and treated as an attachment. Codex can analyze
-        and describe the image content.
+        Pipes an image file which is automatically detected and treated as an attachment for Codex (using -i flag).
 
     .EXAMPLE
-        Get-ChildItem photo.jpg | Invoke-AITool -Prompt "Write a Python script using PIL to add a 10px white border and save as photo-with-border.jpg" -Tool Codex
+        Get-ChildItem photo.jpg | Invoke-AITool -Prompt "Describe this image" -Tool ClaudeCode
+        Pipes an image file to ClaudeCode as a regular file. ClaudeCode can analyze and describe the image.
+
+    .EXAMPLE
+        Get-ChildItem photo.jpg | Invoke-AITool -Prompt "Write a Python script using PIL to add a 10px white border" -Tool Codex
         Codex can see the image and write/execute scripts to manipulate it using tools like PIL, ImageMagick, etc.
 
     .EXAMPLE
-        Invoke-AITool -Attachment "screenshot.png" -Prompt "What UI framework was used to build this interface?" -Tool Codex
-        Explicitly attaches an image file for the AI to analyze and provide insights.
+        Invoke-AITool -Attachment "screenshot.png" -Prompt "What UI framework was used?" -Tool Codex
+        Explicitly attaches an image file for Codex to analyze using the -i flag.
     #>
     [CmdletBinding()]
     param(
@@ -389,12 +393,15 @@ function Invoke-AITool {
                     continue
                 }
 
-                # Check if this is an image file - route to attachments instead of files to process
+                # Check if this is an image file - route to attachments for Codex, regular files for others
                 $extension = [System.IO.Path]::GetExtension($normalizedPath).ToLower()
                 $validImageExtensions = @('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp', '.svg')
 
-                if ($extension -in $validImageExtensions) {
-                    Write-PSFMessage -Level Verbose -Message "Detected image file, adding as attachment: $normalizedPath"
+                # Determine the effective tool (considering default)
+                $effectiveTool = if ($Tool) { $Tool } else { Get-PSFConfigValue -FullName 'AITools.DefaultTool' -Fallback $null }
+
+                if ($extension -in $validImageExtensions -and $effectiveTool -eq 'Codex') {
+                    Write-PSFMessage -Level Verbose -Message "Detected image file for Codex, adding as attachment: $normalizedPath"
                     $imageAttachments += $normalizedPath
                 } else {
                     $filesToProcess += $normalizedPath
@@ -409,14 +416,6 @@ function Invoke-AITool {
     end {
         # Validate attachments (including those collected from pipeline)
         if ($imageAttachments.Count -gt 0) {
-            # Determine the effective tool (considering default)
-            $effectiveTool = if ($Tool) { $Tool } else { Get-PSFConfigValue -FullName 'AITools.DefaultTool' -Fallback $null }
-
-            if ($effectiveTool -ne 'Codex') {
-                Stop-PSFFunction -Message "Attachment parameter is only supported by Codex. Current tool: $effectiveTool. You piped image file(s): $($imageAttachments -join ', ')" -EnableException $true
-                return
-            }
-
             # Validate that all attachments have valid image extensions and exist
             $validImageExtensions = @('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp', '.svg')
             foreach ($attachmentPath in $imageAttachments) {
