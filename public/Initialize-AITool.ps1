@@ -72,13 +72,32 @@ function Initialize-AITool {
         # Special handling for API key-based tools
         if ($toolDef.InitCommand -eq 'API_KEY_CHECK') {
             Write-PSFMessage -Level Verbose -Message "Running API key check for $currentTool"
-            Show-ModuleMessage -MessageName 'aider-api-key-info'
 
-            # Check if API key is already configured
-            if (Test-AiderAPIKey) {
-                Write-PSFMessage -Message "✓ API key is already configured!"
+            # Different message files for different tools
+            if ($currentTool -eq 'PSOPenAI') {
+                Show-ModuleMessage -MessageName 'psopenai-api-key-info'
+
+                # Check if API key is already configured
+                $apiKey = $env:OPENAI_API_KEY
+                if (-not $apiKey) {
+                    $apiKey = $global:OPENAI_API_KEY
+                }
+
+                if ($apiKey) {
+                    Write-PSFMessage -Message "✓ OpenAI API key is already configured!"
+                } else {
+                    Write-PSFMessage -Level Warning -Message "⚠ No OpenAI API key found. Please configure using one of the methods above."
+                }
             } else {
-                Write-PSFMessage -Level Warning -Message "⚠ No API key found. Please configure using one of the methods above."
+                # Aider or other API key-based tools
+                Show-ModuleMessage -MessageName 'aider-api-key-info'
+
+                # Check if API key is already configured
+                if (Test-AiderAPIKey) {
+                    Write-PSFMessage -Message "✓ API key is already configured!"
+                } else {
+                    Write-PSFMessage -Level Warning -Message "⚠ No API key found. Please configure using one of the methods above."
+                }
             }
             return
         }

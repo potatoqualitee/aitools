@@ -91,15 +91,22 @@ function Install-AITool {
             # If SuppressAlreadyInstalledWarning is set, we're being called from Update-AITool
             # so we should continue with installation/update instead of skipping
             if (-not $SuppressAlreadyInstalledWarning) {
-                $version = & $tool.Command --version 2>&1 | Select-Object -First 1
+                # Get version differently for PowerShell modules vs CLIs
+                if ($tool.IsWrapper) {
+                    $module = Get-Module -ListAvailable -Name $tool.Command | Sort-Object Version -Descending | Select-Object -First 1
+                    $version = $module.Version.ToString()
+                    $commandPath = $module.Path
+                } else {
+                    $version = & $tool.Command --version 2>&1 | Select-Object -First 1
+                    # Get the full path to the command
+                    $commandPath = (Get-Command $tool.Command -ErrorAction SilentlyContinue).Source
+                    if (-not $commandPath) {
+                        $commandPath = (Get-Command $tool.Command -ErrorAction SilentlyContinue).Path
+                    }
+                }
+
                 Write-PSFMessage -Level Output -Message "$currentToolName is already installed (version: $($version.Trim()))"
                 Write-PSFMessage -Level Verbose -Message "Skipping installation. To reinstall, first run: Uninstall-AITool -Name $currentToolName"
-
-                # Get the full path to the command
-                $commandPath = (Get-Command $tool.Command -ErrorAction SilentlyContinue).Source
-                if (-not $commandPath) {
-                    $commandPath = (Get-Command $tool.Command -ErrorAction SilentlyContinue).Path
-                }
 
                 Write-Progress -Activity "Installing $currentToolName" -Completed
 
@@ -342,11 +349,48 @@ function Install-AITool {
                     $commandIndex++
                     Write-PSFMessage -Level Verbose -Message "Executing command $commandIndex of $($installCmd.Count): $cmd"
 
+                    # Check if this is a PowerShell cmdlet (for wrapper modules like PSOpenAI)
+                    # PowerShell cmdlets must be executed via Invoke-Expression, not Start-Process
+                    $isPowerShellCmdlet = $tool.IsWrapper -or $cmd -match '^(Install-Module|Uninstall-Module|Update-Module|Import-Module)'
+
                     # Check if command contains shell operators (pipes, redirects, etc.)
                     # These require shell execution and can't be handled by Start-Process
-                    $requiresShell = $cmd -match '[|&><]|&&|\|\||iex|Invoke-Expression'
+                    $requiresShell = $cmd -match '[|&><]|&&|\|\||iex|Invoke-Expression' -or $isPowerShellCmdlet
 
-                    if ($requiresShell) {
+                    # Handle PowerShell cmdlets directly
+                    if ($isPowerShellCmdlet) {
+                        Write-PSFMessage -Level Verbose -Message "Executing PowerShell cmdlet directly"
+                        try {
+                            # Parse command and arguments
+                            $cmdParts = $cmd -split '\s+', 2
+                            $cmdletName = $cmdParts[0]
+
+                            # Build parameter hashtable from remaining arguments
+                            $params = @{}
+                            if ($cmdParts.Count -gt 1) {
+                                # Simple parsing for -Name value -Scope value patterns
+                                $argString = $cmdParts[1]
+                                if ($argString -match '-Name\s+(\S+)') { $params['Name'] = $matches[1] }
+                                if ($argString -match '-Scope\s+(\S+)') { $params['Scope'] = $matches[1] }
+                                if ($argString -match '-Force') { $params['Force'] = $true }
+                            }
+
+                            Write-PSFMessage -Level Verbose -Message "Cmdlet: $cmdletName"
+                            Write-PSFMessage -Level Verbose -Message "Parameters: $($params | Out-String)"
+
+                            $output = & $cmdletName @params 2>&1
+                            $exitCode = 0
+                            $stdout = $output | Out-String
+                            $stderr = ''
+                            $outputText = $stdout
+                        } catch {
+                            $exitCode = 1
+                            $stdout = ''
+                            $stderr = $_.Exception.Message
+                            $outputText = $stderr
+                            Write-PSFMessage -Level Verbose -Message "PowerShell cmdlet failed: $stderr"
+                        }
+                    } elseif ($requiresShell) {
                         Write-PSFMessage -Level Verbose -Message "Command contains shell operators, using shell execution"
 
                         # Use appropriate shell based on OS
@@ -677,14 +721,22 @@ function Install-AITool {
                 Write-PSFMessage -Level Verbose -Message "Verifying installation"
                 if (Test-Command -Command $tool.Command) {
                     Write-PSFMessage -Level Verbose -Message "$currentToolName installed successfully!"
-                    $version = & $tool.Command --version 2>&1 | Select-Object -First 1
-                    Write-PSFMessage -Level Verbose -Message "Version: $version"
 
-                    # Get the full path to the command
-                    $commandPath = (Get-Command $tool.Command -ErrorAction SilentlyContinue).Source
-                    if (-not $commandPath) {
-                        $commandPath = (Get-Command $tool.Command -ErrorAction SilentlyContinue).Path
+                    # Get version differently for PowerShell modules vs CLIs
+                    if ($tool.IsWrapper) {
+                        $module = Get-Module -ListAvailable -Name $tool.Command | Sort-Object Version -Descending | Select-Object -First 1
+                        $version = $module.Version.ToString()
+                        $commandPath = $module.Path
+                    } else {
+                        $version = & $tool.Command --version 2>&1 | Select-Object -First 1
+                        # Get the full path to the command
+                        $commandPath = (Get-Command $tool.Command -ErrorAction SilentlyContinue).Source
+                        if (-not $commandPath) {
+                            $commandPath = (Get-Command $tool.Command -ErrorAction SilentlyContinue).Path
+                        }
                     }
+
+                    Write-PSFMessage -Level Verbose -Message "Version: $version"
 
                     # Run initialization by default unless explicitly skipped
                     if (-not $SkipInitialization) {

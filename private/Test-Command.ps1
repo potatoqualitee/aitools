@@ -1,5 +1,8 @@
 function Test-Command {
-    param([string]$Command)
+    param(
+        [string]$Command,
+        [switch]$IsModule
+    )
 
     if ([string]::IsNullOrWhiteSpace($Command)) {
         Write-PSFMessage -Level Verbose -Message "Command parameter is null or empty"
@@ -7,6 +10,32 @@ function Test-Command {
     }
 
     Write-PSFMessage -Level Verbose -Message "Testing if command exists: $Command"
+
+    # Auto-detect if this is a PowerShell module by checking ToolDefinitions
+    # (Special handling for wrapper modules like PSOpenAI)
+    if (-not $IsModule) {
+        $matchingTool = $script:ToolDefinitions.GetEnumerator() | Where-Object {
+            $_.Value.Command -eq $Command -and $_.Value.IsWrapper
+        } | Select-Object -First 1
+
+        if ($matchingTool) {
+            Write-PSFMessage -Level Verbose -Message "Detected that '$Command' is a PowerShell module wrapper"
+            $IsModule = $true
+        }
+    }
+
+    # Special handling for PowerShell modules (like PSOpenAI)
+    if ($IsModule) {
+        Write-PSFMessage -Level Verbose -Message "Testing PowerShell module: $Command"
+        $module = Get-Module -ListAvailable -Name $Command -ErrorAction SilentlyContinue
+        if ($module) {
+            Write-PSFMessage -Level Verbose -Message "Module '$Command' is installed"
+            return $true
+        } else {
+            Write-PSFMessage -Level Verbose -Message "Module '$Command' not found"
+            return $false
+        }
+    }
 
     $cmd = Get-Command $Command -ErrorAction SilentlyContinue
     if ($null -eq $cmd) {

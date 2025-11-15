@@ -56,16 +56,16 @@ The problem with AI coding assistants isn't their capability, it's their interfa
 
 ## How it differs from API wrappers
 
-You might wonder why this exists when [PSOpenAI](https://github.com/mkht/PSOpenAI) is available. The answer: they solve different problems.
+Most of aitools wraps *agentic CLI tools* (AI assistants that read, understand, and rewrite code), but it also supports [PSOpenAI](https://github.com/mkht/PSOpenAI), a PowerShell wrapper for specialized capabilities like image/video/audio generation and editing.
 
 | API Wrappers (like PSOpenAI)             | Agentic CLI Tools (like Claude Code)        |
 | ---------------------------------------- | -------------------------------------------- |
-| Send prompts, receive text               | Open files, understand code, make edits      |
+| Send prompts, receive text/media         | Open files, understand code, make edits      |
 | You handle file I/O and context          | Built-in file management and context         |
 | Great for generating new content         | Great for refactoring existing code          |
-| Requires scaffolding for code work       | Ships with full coding toolchain             |
+| Excels at image/video/audio generation   | Specialized for code editing workflows       |
 
-PSOpenAI is excellent for what it does. aitools is for when you need an AI to *edit code*, not just *generate text*.
+aitools includes PSOpenAI support specifically for image editing and generation capabilities that CLI tools don't yet provide.
 
 ---
 
@@ -152,8 +152,9 @@ Run the same task through all installed AI tools and compare results.
 | **Codex CLI** | Fast processing | Subscription | ✅ Supported |
 | **Cursor AI** | IDE integration | Free + paid | ✅ Supported |
 | **Ollama** | Offline use, completely free | Free | ✅ Supported |
+| **PSOpenAI** | Image/video/audio generation and editing | Pay-per-use | ✅ Supported |
 
-Each tool has different strengths. Claude Code is the strongest coder but can struggle with files over 400 lines. Gemini has massive context windows. Ollama runs locally with no API costs. Use what fits your needs.
+**Note:** PSOpenAI is a PowerShell module wrapper (not a CLI), providing capabilities that agentic tools don't yet support like image editing, video generation, and text-to-speech. Each tool has different strengths - Claude Code is the strongest coder but can struggle with files over 400 lines. Gemini has massive context windows. Ollama runs locally with no API costs. Use what fits your needs.
 
 ---
 
@@ -251,7 +252,9 @@ This demonstrates what agentic CLIs do well: read complex requirements, maintain
 
 ## Advanced Usage
 
-### Working with Images (Codex Only)
+### Working with Images
+
+**Image Analysis and Code Generation (Codex)**
 
 ```powershell
 $params = @{
@@ -262,7 +265,31 @@ $params = @{
 Invoke-AITool @params
 ```
 
-The `-Attachment` parameter works with image files (`.png`, `.jpg`, `.jpeg`, `.gif`, `.bmp`, `.webp`, `.svg`) and is currently only supported by Codex.
+The `-Attachment` parameter works with image files and is supported by Codex for vision-based code generation.
+
+**Image Editing and Generation (PSOpenAI)**
+
+PSOpenAI provides direct image manipulation capabilities that CLI tools don't yet support:
+
+```powershell
+# Install and configure PSOpenAI
+Install-AITool -Name PSOPenAI
+Initialize-AITool -Tool PSOPenAI
+$env:OPENAI_API_KEY = 'sk-your-api-key'
+
+# Edit an existing image
+Get-ChildItem C:\images\photo.png |
+  Invoke-AITool -Tool PSOPenAI -Prompt "remove the background and add a white sticker border. make transparent. save with descriptive name"
+
+# Generate a new image from text
+Invoke-AITool -Tool PSOPenAI -Prompt "A serene mountain landscape at sunset"
+```
+
+**Key Differences:**
+- **Codex** (and other CLI tools with vision): Analyze images and write code/scripts to manipulate them
+- **PSOpenAI**: Directly edit or generate images through OpenAI's image API endpoints
+
+**Authentication:** PSOpenAI requires an OpenAI API key. Set `$env:OPENAI_API_KEY` or run `Initialize-AITool -Tool PSOPenAI` for configuration instructions.
 
 ### Custom Configuration
 

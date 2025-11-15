@@ -1,0 +1,49 @@
+===================================================================
+PSOpenAI API Key Configuration
+===================================================================
+
+PSOpenAI requires an OpenAI API key to function. You can configure it using one of these methods:
+
+METHOD 1: Environment Variable (Recommended)
+--------------------------------------------
+Set the OPENAI_API_KEY environment variable:
+
+PowerShell:
+  $env:OPENAI_API_KEY = 'sk-your-api-key-here'
+
+To persist across sessions (Windows):
+  [System.Environment]::SetEnvironmentVariable('OPENAI_API_KEY', 'sk-your-api-key-here', 'User')
+
+Linux/macOS:
+  Add to ~/.bashrc or ~/.zshrc:
+  export OPENAI_API_KEY='sk-your-api-key-here'
+
+METHOD 2: Global Variable
+--------------------------
+Set a PowerShell global variable (session-only):
+
+  $global:OPENAI_API_KEY = 'sk-your-api-key-here'
+
+METHOD 3: Per-Command Parameter
+--------------------------------
+Pass the API key directly to each command:
+
+  Invoke-AITool -Tool PSOPenAI -Prompt "..." -ApiKey 'sk-your-api-key-here'
+
+GETTING YOUR API KEY:
+---------------------
+1. Sign up or log in at: https://platform.openai.com/
+2. Navigate to: https://platform.openai.com/api-keys
+3. Click "Create new secret key"
+4. Copy your API key (starts with 'sk-')
+5. Configure using one of the methods above
+
+IMPORTANT:
+----------
+- PSOpenAI is a PowerShell wrapper module, not a CLI tool
+- It provides image editing/generation, video, and audio capabilities
+- Unlike CLI tools, PSOpenAI directly calls OpenAI API endpoints
+- Image editing uses Request-ImageEdit, generation uses Request-ImageGeneration
+- You need an active OpenAI account with available API credits
+
+===================================================================

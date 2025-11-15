@@ -65,28 +65,37 @@ function Get-AITool {
             if ($isInstalled) {
                 Write-PSFMessage -Level Verbose -Message "$currentToolName is installed"
 
-                # Get version information
+                # Get version information differently for PowerShell modules vs CLIs
                 try {
-                    $versionOutput = & $toolDef.Command --version 2>&1 | Select-Object -First 1
-                    $version = ($versionOutput -replace '^.*?(\d+\.\d+\.\d+).*$', '$1').Trim()
+                    if ($toolDef.IsWrapper) {
+                        $module = Get-Module -ListAvailable -Name $toolDef.Command | Sort-Object Version -Descending | Select-Object -First 1
+                        $version = $module.Version.ToString()
+                        $commandPath = $module.Path
+                    } else {
+                        $versionOutput = & $toolDef.Command --version 2>&1 | Select-Object -First 1
+                        $version = ($versionOutput -replace '^.*?(\d+\.\d+\.\d+).*$', '$1').Trim()
 
-                    # If regex didn't match properly, use the original output
-                    if ([string]::IsNullOrWhiteSpace($version) -or $version -eq $versionOutput) {
-                        $version = $versionOutput.ToString().Trim()
+                        # If regex didn't match properly, use the original output
+                        if ([string]::IsNullOrWhiteSpace($version) -or $version -eq $versionOutput) {
+                            $version = $versionOutput.ToString().Trim()
+                        }
+
+                        # Get the command path
+                        $commandPath = (Get-Command $toolDef.Command -ErrorAction SilentlyContinue).Source
+                        if (-not $commandPath) {
+                            $commandPath = (Get-Command $toolDef.Command -ErrorAction SilentlyContinue).Path
+                        }
                     }
 
                     Write-PSFMessage -Level Verbose -Message "Version: $version"
                 } catch {
                     $version = 'Unknown'
+                    $commandPath = 'Unknown'
                     Write-PSFMessage -Level Verbose -Message "Failed to retrieve version: $_"
                 }
 
-                # Get the command path
+                # Note: commandPath already set above, removed duplicate try block
                 try {
-                    $commandPath = (Get-Command $toolDef.Command -ErrorAction SilentlyContinue).Source
-                    if (-not $commandPath) {
-                        $commandPath = (Get-Command $toolDef.Command -ErrorAction SilentlyContinue).Path
-                    }
                     Write-PSFMessage -Level Verbose -Message "Path: $commandPath"
                 } catch {
                     $commandPath = 'Unknown'

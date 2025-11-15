@@ -984,6 +984,37 @@ function Invoke-AITool {
                     }
                     New-CursorArgument @argumentParams
                 }
+                'PSOPenAI' {
+                    # PSOpenAI is handled via direct function call, not CLI arguments
+                    # Return null to skip normal CLI execution flow
+                    $null
+                }
+            }
+
+            # Special handling for PSOpenAI (PowerShell module wrapper, not a CLI)
+            if ($currentTool -eq 'PSOPenAI') {
+                Write-PSFMessage -Level Verbose -Message "Invoking PSOpenAI module for image editing"
+                try {
+                    $psopenaiParams = @{
+                        Prompt          = $promptText
+                        InputImage      = $singleFile
+                        GenerationType  = 'Image'
+                    }
+                    if ($modelToUse) {
+                        $psopenaiParams['Model'] = $modelToUse
+                    }
+
+                    $result = Invoke-PSOpenAI @psopenaiParams
+
+                    # Output result directly to pipeline
+                    $result
+
+                    # Skip to next file, don't use normal CLI execution
+                    continue
+                } catch {
+                    Write-PSFMessage -Level Error -Message "PSOpenAI invocation failed: $_"
+                    continue
+                }
             }
 
             Write-PSFMessage -Level Verbose -Message "Final prompt sent to $currentTool :`n$fullPrompt"

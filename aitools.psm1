@@ -208,12 +208,33 @@ $script:ToolDefinitions = @{
         Debug             = $null
         Priority          = 5
     }
+    'PSOPenAI' = @{
+        Command           = 'PSOpenAI'  # Module name, not a CLI command
+        InstallCommands   = @{
+            Windows = 'Install-Module -Name PSOpenAI -Scope CurrentUser -Force'
+            Linux   = 'Install-Module -Name PSOpenAI -Scope CurrentUser -Force'
+            MacOS   = 'Install-Module -Name PSOpenAI -Scope CurrentUser -Force'
+        }
+        UninstallCommands = @{
+            Windows = 'Uninstall-Module -Name PSOpenAI -Force'
+            Linux   = 'Uninstall-Module -Name PSOpenAI -Force'
+            MacOS   = 'Uninstall-Module -Name PSOpenAI -Force'
+        }
+        TestCommand       = 'Get-Module -ListAvailable PSOpenAI'
+        InitCommand       = 'API_KEY_CHECK'  # Special flag for API key verification
+        PermissionFlag    = $null
+        Model             = $null
+        Verbose           = $null
+        Debug             = $null
+        Priority          = 7
+        IsWrapper         = $true  # Flag to indicate this is a PowerShell module wrapper, not a CLI
+    }
 }
 
 # Define TEPP scriptblock
 $teppScriptBlockParams = @{
     Name        = 'Tool'
-    ScriptBlock = { 'All', 'Aider', 'Gemini', 'ClaudeCode', 'Codex', 'GitHubCopilot', 'Cursor', 'Ollama' }
+    ScriptBlock = { 'All', 'Aider', 'Gemini', 'ClaudeCode', 'Codex', 'GitHubCopilot', 'Cursor', 'Ollama', 'PSOPenAI' }
 }
 Register-PSFTeppScriptblock @teppScriptBlockParams
 

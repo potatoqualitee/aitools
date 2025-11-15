@@ -125,12 +125,53 @@ function Uninstall-AITool {
         Write-PSFMessage -Level Verbose -Message "Command: $uninstallCmd"
         Write-PSFMessage -Level Verbose -Message "Executing uninstall command"
 
+        # Check if this is a PowerShell cmdlet (for wrapper modules like PSOpenAI)
+        $isPowerShellCmdlet = $tool.IsWrapper -or $uninstallCmd -match '^(Install-Module|Uninstall-Module|Update-Module|Import-Module)'
+
         try {
-            # Use Start-Process to reliably capture both stdout and stderr
-            # Split the command into executable and arguments
-            $cmdParts = $uninstallCmd -split ' ', 2
-            $executable = $cmdParts[0]
-            $arguments = if ($cmdParts.Count -gt 1) { $cmdParts[1] } else { '' }
+            # Handle PowerShell cmdlets directly
+            if ($isPowerShellCmdlet) {
+                Write-PSFMessage -Level Verbose -Message "Executing PowerShell cmdlet directly"
+
+                # Parse command and arguments
+                $cmdParts = $uninstallCmd -split '\s+', 2
+                $cmdletName = $cmdParts[0]
+
+                # Build parameter hashtable from remaining arguments
+                $params = @{}
+                if ($cmdParts.Count -gt 1) {
+                    $argString = $cmdParts[1]
+                    if ($argString -match '-Name\s+(\S+)') { $params['Name'] = $matches[1] }
+                    if ($argString -match '-Force') { $params['Force'] = $true }
+                }
+
+                Write-PSFMessage -Level Verbose -Message "Cmdlet: $cmdletName"
+                Write-PSFMessage -Level Verbose -Message "Parameters: $($params | Out-String)"
+
+                # For PowerShell modules, remove from current session first
+                if ($cmdletName -eq 'Uninstall-Module' -and $params['Name']) {
+                    $moduleName = $params['Name']
+                    Write-PSFMessage -Level Verbose -Message "Removing module from current session: $moduleName"
+                    $psopenaiall = Get-Module -ListAvailable -Name $moduleName
+                    $psopenaiall | Remove-Module -Force -ErrorAction SilentlyContinue
+                    $psopenaiall | Uninstall-Module -Force -ErrorAction SilentlyContinue
+                }
+
+                $output = & $cmdletName @params 2>&1
+                $exitCode = 0
+                $stdout = $output | Out-String
+
+                if ($stdout) {
+                    $stdout -split "`n" | Where-Object { $_.Trim() } | ForEach-Object {
+                        Write-PSFMessage -Level Verbose -Message $_.Trim()
+                    }
+                }
+            } else {
+                # Use Start-Process for external executables
+                # Split the command into executable and arguments
+                $cmdParts = $uninstallCmd -split ' ', 2
+                $executable = $cmdParts[0]
+                $arguments = if ($cmdParts.Count -gt 1) { $cmdParts[1] } else { '' }
 
             Write-PSFMessage -Level Verbose -Message "Executable: $executable"
             Write-PSFMessage -Level Verbose -Message "Arguments: $arguments"
@@ -163,23 +204,23 @@ function Uninstall-AITool {
             $psi.UseShellExecute = $false
             $psi.CreateNoWindow = $true
 
-            $process = New-Object System.Diagnostics.Process
-            $process.StartInfo = $psi
-            $process.Start() | Out-Null
+                $process = New-Object System.Diagnostics.Process
+                $process.StartInfo = $psi
+                $process.Start() | Out-Null
 
-            $stdout = $process.StandardOutput.ReadToEnd()
-            $stderr = $process.StandardError.ReadToEnd()
-            $process.WaitForExit()
+                $stdout = $process.StandardOutput.ReadToEnd()
+                $stderr = $process.StandardError.ReadToEnd()
+                $process.WaitForExit()
 
-            $exitCode = $process.ExitCode
-            $outputText = "$stdout`n$stderr"
+                # Send output to verbose
+                if ($stdout) {
+                    $stdout -split "`n" | ForEach-Object { Write-PSFMessage -Level Verbose -Message $_ }
+                }
+                if ($stderr) {
+                    $stderr -split "`n" | ForEach-Object { Write-PSFMessage -Level Verbose -Message $_ }
+                }
 
-            # Send output to verbose
-            if ($stdout) {
-                $stdout -split "`n" | ForEach-Object { Write-PSFMessage -Level Verbose -Message $_ }
-            }
-            if ($stderr) {
-                $stderr -split "`n" | ForEach-Object { Write-PSFMessage -Level Verbose -Message $_ }
+                $exitCode = $process.ExitCode
             }
 
             Write-PSFMessage -Level Verbose -Message "Uninstall command completed with exit code: $exitCode"
