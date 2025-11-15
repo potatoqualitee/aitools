@@ -54,7 +54,38 @@ function New-CodexArgument {
         $arguments += '--config', "model_reasoning_effort=`"$ReasoningEffort`""
     }
 
-    # Add image attachments if provided
+    # Build the prompt FIRST (before image attachments)
+    # IMPORTANT: The prompt must come before -i flags or Codex will read from stdin
+    $promptToAdd = $null
+    if ($TargetFile) {
+        Write-PSFMessage -Level Verbose -Message "Target file: $TargetFile"
+
+        # Extract just the filename for the prompt
+        $fileName = Split-Path $TargetFile -Leaf
+
+        # Codex exec needs explicit instruction to read and edit the file
+        # The full prompt with context and instructions should already be in $Message
+        $promptToAdd = if ($Message) {
+            # Message already contains the full prompt with context and instructions
+            # Just ensure the filename is clear
+            "$Message`n`nEDIT AND SAVE: $fileName"
+        } else {
+            # Fallback if no message provided
+            "Read, edit and save the file: $fileName"
+        }
+
+        Write-PSFMessage -Level Verbose -Message "Adding combined prompt with file reference"
+    } elseif ($Message) {
+        Write-PSFMessage -Level Verbose -Message "Adding prompt message (chat mode)"
+        $promptToAdd = $Message
+    }
+
+    # Add the prompt to arguments if we have one
+    if ($promptToAdd) {
+        $arguments += $promptToAdd
+    }
+
+    # Add image attachments AFTER the prompt
     if ($Attachment) {
         foreach ($attachmentPath in $Attachment) {
             # Resolve to absolute path and normalize
@@ -67,31 +98,6 @@ function New-CodexArgument {
                 Write-PSFMessage -Level Warning -Message "Could not resolve attachment path: $attachmentPath"
             }
         }
-    }
-
-    # Build the prompt to include the target file reference
-    if ($TargetFile) {
-        Write-PSFMessage -Level Verbose -Message "Target file: $TargetFile"
-
-        # Extract just the filename for the prompt
-        $fileName = Split-Path $TargetFile -Leaf
-
-        # Codex exec needs explicit instruction to read and edit the file
-        # The full prompt with context and instructions should already be in $Message
-        $fullMessage = if ($Message) {
-            # Message already contains the full prompt with context and instructions
-            # Just ensure the filename is clear
-            "$Message`n`nEDIT AND SAVE: $fileName"
-        } else {
-            # Fallback if no message provided
-            "Read, edit and save the file: $fileName"
-        }
-
-        Write-PSFMessage -Level Verbose -Message "Adding combined prompt with file reference"
-        $arguments += $fullMessage
-    } elseif ($Message) {
-        Write-PSFMessage -Level Verbose -Message "Adding prompt message (chat mode)"
-        $arguments += $Message
     }
 
     Write-PSFMessage -Level Verbose -Message "Codex arguments built: $($arguments -join ' ')"

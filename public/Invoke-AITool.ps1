@@ -33,6 +33,9 @@ function Invoke-AITool {
     .PARAMETER Attachment
         Optional image file(s) to attach to the prompt. Only supported by Codex.
         Accepts common image formats (png, jpg, jpeg, gif, bmp, webp, svg).
+        Note: When piping image files via Get-ChildItem, they are automatically treated as attachments.
+        Codex can see and analyze images but cannot directly edit them - it can write scripts or call
+        tools (Python/PIL, ImageMagick, etc.) to manipulate images.
 
     .PARAMETER Raw
         Run the command directly without capturing output or assigning to variables.
@@ -109,6 +112,19 @@ function Invoke-AITool {
         Get-ChildItem *.ps1 | Invoke-AITool -Prompt "Add error handling" -SkipModified
         Processes only files that haven't been modified, skipping files with uncommitted changes,
         staged changes, or committed but not pushed changes.
+
+    .EXAMPLE
+        Get-ChildItem diagram.png | Invoke-AITool -Prompt "Describe what's in this image" -Tool Codex
+        Pipes an image file which is automatically detected and treated as an attachment. Codex can analyze
+        and describe the image content.
+
+    .EXAMPLE
+        Get-ChildItem photo.jpg | Invoke-AITool -Prompt "Write a Python script using PIL to add a 10px white border and save as photo-with-border.jpg" -Tool Codex
+        Codex can see the image and write/execute scripts to manipulate it using tools like PIL, ImageMagick, etc.
+
+    .EXAMPLE
+        Invoke-AITool -Attachment "screenshot.png" -Prompt "What UI framework was used to build this interface?" -Tool Codex
+        Explicitly attaches an image file for the AI to analyze and provide insights.
     #>
     [CmdletBinding()]
     param(
@@ -147,6 +163,12 @@ function Invoke-AITool {
         # Save original location for cleanup in finally block
         $script:originalLocation = Get-Location
         Write-PSFMessage -Level Verbose -Message "Saved original location: $script:originalLocation"
+
+        # Initialize attachment array if not already set (for piped images)
+        $imageAttachments = @()
+        if ($Attachment) {
+            $imageAttachments = @($Attachment)
+        }
 
         # Get list of modified files from git if -SkipModified is specified
         $gitModifiedFiles = @()
@@ -224,34 +246,7 @@ function Invoke-AITool {
             Write-PSFMessage -Level Verbose -Message "No prompt provided, using default: $Prompt"
         }
 
-        # Validate Attachment parameter - only Codex supports attachments
-        if ($Attachment) {
-            # Determine the effective tool (considering default)
-            $effectiveTool = if ($Tool) { $Tool } else { Get-PSFConfigValue -FullName 'AITools.DefaultTool' -Fallback $null }
-
-            if ($effectiveTool -ne 'Codex') {
-                Stop-PSFFunction -Message "Attachment parameter is only supported by Codex. Current tool: $effectiveTool" -EnableException $true
-                return
-            }
-
-            # Validate that all attachments have valid image extensions
-            $validImageExtensions = @('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp', '.svg')
-            foreach ($attachmentPath in $Attachment) {
-                $extension = [System.IO.Path]::GetExtension($attachmentPath).ToLower()
-                if ($extension -notin $validImageExtensions) {
-                    Stop-PSFFunction -Message "Invalid attachment file type: $attachmentPath. Only image files are supported: $($validImageExtensions -join ', ')" -EnableException $true
-                    return
-                }
-
-                # Verify the file exists
-                if (-not (Test-Path $attachmentPath)) {
-                    Stop-PSFFunction -Message "Attachment file not found: $attachmentPath" -EnableException $true
-                    return
-                }
-            }
-
-            Write-PSFMessage -Level Verbose -Message "Validated $($Attachment.Count) attachment(s)"
-        }
+        # Note: Attachment validation moved to end{} block after imageAttachments are collected from pipeline
 
         # Process Prompt parameter - detect if it's a file object, file path, file pattern, or string
         # Track prompt file path for copilot --add-dir support
@@ -394,8 +389,17 @@ function Invoke-AITool {
                     continue
                 }
 
-                $filesToProcess += $normalizedPath
-                Write-PSFMessage -Level Debug -Message "Queued file: $normalizedPath"
+                # Check if this is an image file - route to attachments instead of files to process
+                $extension = [System.IO.Path]::GetExtension($normalizedPath).ToLower()
+                $validImageExtensions = @('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp', '.svg')
+
+                if ($extension -in $validImageExtensions) {
+                    Write-PSFMessage -Level Verbose -Message "Detected image file, adding as attachment: $normalizedPath"
+                    $imageAttachments += $normalizedPath
+                } else {
+                    $filesToProcess += $normalizedPath
+                    Write-PSFMessage -Level Debug -Message "Queued file: $normalizedPath"
+                }
             } else {
                 Write-PSFMessage -Level Warning -Message "File not found: $file"
             }
@@ -403,6 +407,35 @@ function Invoke-AITool {
     }
 
     end {
+        # Validate attachments (including those collected from pipeline)
+        if ($imageAttachments.Count -gt 0) {
+            # Determine the effective tool (considering default)
+            $effectiveTool = if ($Tool) { $Tool } else { Get-PSFConfigValue -FullName 'AITools.DefaultTool' -Fallback $null }
+
+            if ($effectiveTool -ne 'Codex') {
+                Stop-PSFFunction -Message "Attachment parameter is only supported by Codex. Current tool: $effectiveTool. You piped image file(s): $($imageAttachments -join ', ')" -EnableException $true
+                return
+            }
+
+            # Validate that all attachments have valid image extensions and exist
+            $validImageExtensions = @('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp', '.svg')
+            foreach ($attachmentPath in $imageAttachments) {
+                $extension = [System.IO.Path]::GetExtension($attachmentPath).ToLower()
+                if ($extension -notin $validImageExtensions) {
+                    Stop-PSFFunction -Message "Invalid attachment file type: $attachmentPath. Only image files are supported: $($validImageExtensions -join ', ')" -EnableException $true
+                    return
+                }
+
+                # Verify the file exists (for explicitly provided attachments, not piped files which are already resolved)
+                if (-not (Test-Path $attachmentPath)) {
+                    Stop-PSFFunction -Message "Attachment file not found: $attachmentPath" -EnableException $true
+                    return
+                }
+            }
+
+            Write-PSFMessage -Level Verbose -Message "Validated $($imageAttachments.Count) attachment(s): $($imageAttachments -join ', ')"
+        }
+
         # Loop through each tool (will be one tool or multiple if "All" was selected)
         foreach ($currentTool in $toolsToRun) {
             Write-PSFMessage -Level Verbose -Message "Processing with tool: $currentTool"
@@ -527,8 +560,8 @@ function Invoke-AITool {
                     if ($reasoningEffortToUse) {
                         $argumentParams['ReasoningEffort'] = $reasoningEffortToUse
                     }
-                    if ($Attachment) {
-                        $argumentParams['Attachment'] = $Attachment
+                    if ($imageAttachments.Count -gt 0) {
+                        $argumentParams['Attachment'] = $imageAttachments
                     }
                     New-CodexArgument @argumentParams
                 }
@@ -660,9 +693,9 @@ function Invoke-AITool {
                     Write-PSFMessage -Level Verbose -Message "Executing Codex in chat mode (prompt in arguments)"
 
                     # Wrap tool execution with retry logic
-                    $executionScriptBlock = {
-                        & $toolDef.Command @arguments *>&1 | Out-File -FilePath $tempOutputFile -Encoding utf8
-                    }.GetNewClosure()
+                    $executionScriptBlock = [ScriptBlock]::Create(@"
+& '$($toolDef.Command)' $($arguments | ForEach-Object { if ($_ -match '\s') { "'$($_.Replace("'", "''"))'" } else { $_ } }) *>&1 | Out-File -FilePath '$tempOutputFile' -Encoding utf8
+"@)
 
                     Invoke-WithRetry -ScriptBlock $executionScriptBlock -EnableRetry:(-not $DisableRetry) -MaxTotalMinutes $MaxRetryMinutes -Context "Codex chat mode"
 
@@ -670,9 +703,21 @@ function Invoke-AITool {
                     $capturedOutput = Get-Content -Path $tempOutputFile -Raw -Encoding utf8
                     Remove-Item -Path $tempOutputFile -Force -ErrorAction SilentlyContinue
 
+                    # Determine filename/path for output - use image attachment if present, otherwise chat mode
+                    $outputFileName = if ($imageAttachments.Count -gt 0) {
+                        [System.IO.Path]::GetFileName($imageAttachments[0])
+                    } else {
+                        'N/A (Chat Mode)'
+                    }
+                    $outputFullPath = if ($imageAttachments.Count -gt 0) {
+                        $imageAttachments[0]
+                    } else {
+                        'N/A (Chat Mode)'
+                    }
+
                     [PSCustomObject]@{
-                        FileName     = 'N/A (Chat Mode)'
-                        FullPath     = 'N/A (Chat Mode)'
+                        FileName     = $outputFileName
+                        FullPath     = $outputFullPath
                         Tool         = $currentTool
                         Model        = if ($modelToUse) { $modelToUse } else { 'Default' }
                         Result       = $capturedOutput
@@ -684,9 +729,11 @@ function Invoke-AITool {
 
                     Write-PSFMessage -Level Verbose -Message "Tool exited with code: $LASTEXITCODE"
                     if ($LASTEXITCODE -eq 0) {
-                        Write-PSFMessage -Level Verbose -Message "Chat mode completed successfully"
+                        $modeDesc = if ($imageAttachments.Count -gt 0) { "image processing" } else { "chat mode" }
+                        Write-PSFMessage -Level Verbose -Message "Codex $modeDesc completed successfully"
                     } else {
-                        Write-PSFMessage -Level Error -Message "Chat mode failed (exit code $LASTEXITCODE)"
+                        $modeDesc = if ($imageAttachments.Count -gt 0) { "image processing" } else { "chat mode" }
+                        Write-PSFMessage -Level Error -Message "Codex $modeDesc failed (exit code $LASTEXITCODE)"
                     }
                 } elseif ($currentTool -eq 'Cursor') {
                     Write-PSFMessage -Level Verbose -Message "Executing Cursor in chat mode (prompt in arguments)"
@@ -918,8 +965,8 @@ function Invoke-AITool {
                     if ($reasoningEffortToUse) {
                         $argumentParams['ReasoningEffort'] = $reasoningEffortToUse
                     }
-                    if ($Attachment) {
-                        $argumentParams['Attachment'] = $Attachment
+                    if ($imageAttachments.Count -gt 0) {
+                        $argumentParams['Attachment'] = $imageAttachments
                     }
                     New-CodexArgument @argumentParams
                 }
@@ -1063,9 +1110,9 @@ function Invoke-AITool {
                     Write-PSFMessage -Level Verbose -Message "Executing Codex (prompt in arguments)"
 
                     # Wrap tool execution with retry logic
-                    $executionScriptBlock = {
-                        & $toolDef.Command @arguments *>&1 | Out-File -FilePath $tempOutputFile -Encoding utf8
-                    }.GetNewClosure()
+                    $executionScriptBlock = [ScriptBlock]::Create(@"
+& '$($toolDef.Command)' $($arguments | ForEach-Object { if ($_ -match '\s') { "'$($_.Replace("'", "''"))'" } else { $_ } }) *>&1 | Out-File -FilePath '$tempOutputFile' -Encoding utf8
+"@)
 
                     Invoke-WithRetry -ScriptBlock $executionScriptBlock -EnableRetry:(-not $DisableRetry) -MaxTotalMinutes $MaxRetryMinutes -Context "Codex processing $singleFile"
 
