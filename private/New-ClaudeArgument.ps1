@@ -17,27 +17,27 @@ function New-ClaudeArgument {
     }
 
     if ($UsePermissionBypass) {
-        Write-PSFMessage -Level Verbose -Message "Adding permission bypass flag"
+        Write-PSFMessage -Level Debug -Message "Adding permission bypass flag"
         $arguments += '--dangerously-skip-permissions'
     }
 
     if ($PSCmdlet.MyInvocation.BoundParameters['Verbose']) {
-        Write-PSFMessage -Level Verbose -Message "Adding verbose flag"
+        Write-PSFMessage -Level Debug -Message "Adding verbose flag"
         $arguments += '--verbose'
     }
 
     if ($PSCmdlet.MyInvocation.BoundParameters['Debug']) {
-        Write-PSFMessage -Level Verbose -Message "Adding debug flag"
+        Write-PSFMessage -Level Debug -Message "Adding debug flag"
         $arguments += '--debug'
     }
 
     if ($Model) {
-        Write-PSFMessage -Level Verbose -Message "Using model: $Model"
+        Write-PSFMessage -Level Debug -Message "Using model: $Model"
         $arguments += '--model', $Model
     }
 
     if ($TargetFile) {
-        Write-PSFMessage -Level Verbose -Message "Target file: $TargetFile"
+        Write-PSFMessage -Level Debug -Message "Target file: $TargetFile"
         $arguments += $TargetFile
     }
 

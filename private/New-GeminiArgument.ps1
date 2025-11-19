@@ -14,10 +14,10 @@ function New-GeminiArgument {
     # so even in YOLO mode, Gemini cannot execute bash commands, run code, or perform other dangerous operations.
     # This provides reliability (no manual approvals) while maintaining safety (no execution capabilities).
     if ($UsePermissionBypass) {
-        Write-PSFMessage -Level Verbose -Message "Adding yolo mode flag (restricted to safe file operations only)"
+        Write-PSFMessage -Level Debug -Message "Adding yolo mode flag (restricted to safe file operations only)"
         $arguments += '--yolo'
     } else {
-        Write-PSFMessage -Level Verbose -Message "Using auto_edit approval mode"
+        Write-PSFMessage -Level Debug -Message "Using auto_edit approval mode"
         $arguments += '--approval-mode', 'auto_edit'
     }
 
@@ -27,19 +27,19 @@ function New-GeminiArgument {
 
     # SECURITY: Only allow file operations - no command execution, web search, or other tools
     # This ensures Gemini can only read, write, and edit files - nothing else
-    Write-PSFMessage -Level Verbose -Message "Allowing only Read, Write, and Edit tools (no execution)"
+    Write-PSFMessage -Level Debug -Message "Allowing only Read, Write, and Edit tools (no execution)"
     $arguments += '--allowed-tools', 'Read', 'Write', 'Edit'
 
     if ($PSCmdlet.MyInvocation.BoundParameters['Debug']) {
-        Write-PSFMessage -Level Verbose -Message "Adding debug flag"
+        Write-PSFMessage -Level Debug -Message "Adding debug flag"
         $arguments += '--debug'
     } elseif ($PSCmdlet.MyInvocation.BoundParameters['Verbose']) {
-        Write-PSFMessage -Level Verbose -Message "Adding verbose flag"
+        Write-PSFMessage -Level Debug -Message "Adding verbose flag"
         $arguments += '-d'
     }
 
     if ($Model) {
-        Write-PSFMessage -Level Verbose -Message "Using model: $Model"
+        Write-PSFMessage -Level Debug -Message "Using model: $Model"
         $arguments += '--model', $Model
     }
 
@@ -47,12 +47,12 @@ function New-GeminiArgument {
         # Validate and resolve the target file path
         if (Test-Path $TargetFile) {
             $resolvedTargetFile = (Resolve-Path $TargetFile).Path
-            Write-PSFMessage -Level Verbose -Message "Target file: $resolvedTargetFile (resolved from: $TargetFile)"
+            Write-PSFMessage -Level Debug -Message "Target file: $resolvedTargetFile (resolved from: $TargetFile)"
 
             # Extract parent directory to add to workspace for cross-repo access
             $targetDir = Split-Path (Split-Path $resolvedTargetFile -Parent) -Parent
             if ($targetDir -and (Test-Path $targetDir)) {
-                Write-PSFMessage -Level Verbose -Message "Adding parent directory to workspace: $targetDir"
+                Write-PSFMessage -Level Debug -Message "Adding parent directory to workspace: $targetDir"
                 $arguments += '--include-directories', $targetDir
             }
 

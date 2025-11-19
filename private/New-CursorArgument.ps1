@@ -14,27 +14,27 @@ function New-CursorArgument {
     $arguments = @()
 
     if ($UsePermissionBypass) {
-        Write-PSFMessage -Level Verbose -Message "Adding auto-apply flag"
+        Write-PSFMessage -Level Debug -Message "Adding auto-apply flag"
         $arguments += '--auto-apply'
     }
 
     if ($PSCmdlet.MyInvocation.BoundParameters['Verbose']) {
-        Write-PSFMessage -Level Verbose -Message "Adding verbose flag"
+        Write-PSFMessage -Level Debug -Message "Adding verbose flag"
         $arguments += '--verbose'
     }
 
     if ($PSCmdlet.MyInvocation.BoundParameters['Debug']) {
-        Write-PSFMessage -Level Verbose -Message "Adding debug flag"
+        Write-PSFMessage -Level Debug -Message "Adding debug flag"
         $arguments += '--debug'
     }
 
     if ($Model) {
-        Write-PSFMessage -Level Verbose -Message "Using model: $Model"
+        Write-PSFMessage -Level Debug -Message "Using model: $Model"
         $arguments += '--model', $Model
     }
 
     if ($ReasoningEffort) {
-        Write-PSFMessage -Level Verbose -Message "Using reasoning effort: $ReasoningEffort"
+        Write-PSFMessage -Level Debug -Message "Using reasoning effort: $ReasoningEffort"
         $arguments += '--reasoning-effort', $ReasoningEffort
     }
 
@@ -45,7 +45,7 @@ function New-CursorArgument {
             if (Test-Path $ctxFile) {
                 # Resolve to full path
                 $resolvedCtxFile = (Resolve-Path $ctxFile).Path
-                Write-PSFMessage -Level Verbose -Message "Adding context file: $resolvedCtxFile (resolved from: $ctxFile)"
+                Write-PSFMessage -Level Debug -Message "Adding context file: $resolvedCtxFile (resolved from: $ctxFile)"
                 $arguments += '--context-file', $resolvedCtxFile
             } else {
                 Write-PSFMessage -Level Warning -Message "Context file path not found and will be skipped: $ctxFile"
@@ -54,12 +54,12 @@ function New-CursorArgument {
     }
 
     if ($Message) {
-        Write-PSFMessage -Level Verbose -Message "Adding message/prompt"
+        Write-PSFMessage -Level Debug -Message "Adding message/prompt"
         $arguments += '--message', $Message
     }
 
     if ($TargetFile) {
-        Write-PSFMessage -Level Verbose -Message "Target file: $TargetFile"
+        Write-PSFMessage -Level Debug -Message "Target file: $TargetFile"
         $arguments += $TargetFile
     }
 

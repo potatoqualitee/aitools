@@ -14,7 +14,7 @@ function New-CopilotArgument {
     $arguments = @()
 
     # Always add --allow-all-tools for non-interactive mode
-    Write-PSFMessage -Level Verbose -Message "Adding allow-all-tools flag"
+    Write-PSFMessage -Level Debug -Message "Adding allow-all-tools flag"
     $arguments += '--allow-all-tools'
 
     # Add directory access first (must come before other flags for proper permission handling)
@@ -22,18 +22,18 @@ function New-CopilotArgument {
     $directoriesToAdd = @()
 
     if ($WorkingDirectory) {
-        Write-PSFMessage -Level Verbose -Message "Adding working directory: $WorkingDirectory"
+        Write-PSFMessage -Level Debug -Message "Adding working directory: $WorkingDirectory"
         $directoriesToAdd += $WorkingDirectory
     }
 
     if ($TargetFile) {
         $parentDir = Split-Path -Parent $TargetFile
-        Write-PSFMessage -Level Verbose -Message "Adding target file parent directory: $parentDir"
+        Write-PSFMessage -Level Debug -Message "Adding target file parent directory: $parentDir"
         $directoriesToAdd += $parentDir
 
         if (-not (Test-Path $parentDir/.git)) {
             $grandparentDir = Split-Path -Parent $parentDir
-            Write-PSFMessage -Level Verbose -Message "Adding target file grandparent directory: $grandparentDir"
+            Write-PSFMessage -Level Debug -Message "Adding target file grandparent directory: $grandparentDir"
             $directoriesToAdd += $grandparentDir
         }
     }
@@ -44,7 +44,7 @@ function New-CopilotArgument {
             # Resolve to full path
             $resolvedPromptFile = (Resolve-Path $PromptFilePath).Path
             $promptParentDir = Split-Path -Parent $resolvedPromptFile
-            Write-PSFMessage -Level Verbose -Message "Adding prompt file parent directory: $promptParentDir (resolved from: $PromptFilePath)"
+            Write-PSFMessage -Level Debug -Message "Adding prompt file parent directory: $promptParentDir (resolved from: $PromptFilePath)"
             $directoriesToAdd += $promptParentDir
         } else {
             Write-PSFMessage -Level Warning -Message "Prompt file path not found and will be skipped: $PromptFilePath"
@@ -59,7 +59,7 @@ function New-CopilotArgument {
                 # Resolve to full path
                 $resolvedContextFile = (Resolve-Path $contextFile).Path
                 $contextParentDir = Split-Path -Parent $resolvedContextFile
-                Write-PSFMessage -Level Verbose -Message "Adding context file parent directory: $contextParentDir (resolved from: $contextFile)"
+                Write-PSFMessage -Level Debug -Message "Adding context file parent directory: $contextParentDir (resolved from: $contextFile)"
                 $directoriesToAdd += $contextParentDir
             } else {
                 Write-PSFMessage -Level Warning -Message "Context file path not found and will be skipped: $contextFile"
@@ -74,26 +74,26 @@ function New-CopilotArgument {
     }
 
     if ($PSCmdlet.MyInvocation.BoundParameters['Debug']) {
-        Write-PSFMessage -Level Verbose -Message "Setting log level to debug"
+        Write-PSFMessage -Level Debug -Message "Setting log level to debug"
         $arguments += '--log-level', 'debug'
     } elseif ($PSCmdlet.MyInvocation.BoundParameters['Verbose']) {
-        Write-PSFMessage -Level Verbose -Message "Setting log level to info"
+        Write-PSFMessage -Level Debug -Message "Setting log level to info"
         $arguments += '--log-level', 'info'
     }
 
     if ($Model) {
-        Write-PSFMessage -Level Verbose -Message "Using model: $Model"
+        Write-PSFMessage -Level Debug -Message "Using model: $Model"
         $arguments += '--model', $Model
     }
 
     if ($Message) {
-        Write-PSFMessage -Level Verbose -Message "Adding message prompt"
+        Write-PSFMessage -Level Debug -Message "Adding message prompt"
 
         # For file editing, prepend the target file reference at the very beginning
         # so Copilot knows which file to edit before reading the instructions
         if ($TargetFile) {
             $Message = "@$TargetFile`n`n$Message"
-            Write-PSFMessage -Level Verbose -Message "Prepended target file to message: @$TargetFile"
+            Write-PSFMessage -Level Debug -Message "Prepended target file to message: @$TargetFile"
         }
 
         $arguments += '-p', $Message

@@ -16,21 +16,21 @@ function New-CodexArgument {
 
     # Set RUST_LOG environment variable for Codex
     if ($PSCmdlet.MyInvocation.BoundParameters['Debug']) {
-        Write-PSFMessage -Level Verbose -Message "Setting RUST_LOG to debug"
+        Write-PSFMessage -Level Debug -Message "Setting RUST_LOG to debug"
         $env:RUST_LOG = 'debug'
     } elseif ($PSCmdlet.MyInvocation.BoundParameters['Verbose']) {
-        Write-PSFMessage -Level Verbose -Message "Setting RUST_LOG to info"
+        Write-PSFMessage -Level Debug -Message "Setting RUST_LOG to info"
         $env:RUST_LOG = 'info'
     }
 
     # Set working directory if provided (helps with workspace permissions)
     if ($WorkingDirectory) {
-        Write-PSFMessage -Level Verbose -Message "Setting working directory: $WorkingDirectory"
+        Write-PSFMessage -Level Debug -Message "Setting working directory: $WorkingDirectory"
         $arguments += '-C', $WorkingDirectory
     }
 
     if ($UsePermissionBypass) {
-        Write-PSFMessage -Level Verbose -Message "Using full-auto mode with bypass"
+        Write-PSFMessage -Level Debug -Message "Using full-auto mode with bypass"
         # Note: --full-auto is supposed to set --sandbox workspace-write automatically,
         # but in practice it still defaults to read-only mode. Instead, we use
         # --dangerously-bypass-approvals-and-sandbox which:
@@ -40,17 +40,17 @@ function New-CodexArgument {
         # This is safe for batch processing in git repositories where you have backups.
         $arguments += '--dangerously-bypass-approvals-and-sandbox'
     } else {
-        Write-PSFMessage -Level Verbose -Message "Using auto-edit mode"
+        Write-PSFMessage -Level Debug -Message "Using auto-edit mode"
         $arguments += '--auto-edit'
     }
 
     if ($Model) {
-        Write-PSFMessage -Level Verbose -Message "Using model: $Model"
+        Write-PSFMessage -Level Debug -Message "Using model: $Model"
         $arguments += '--model', $Model
     }
 
     if ($ReasoningEffort) {
-        Write-PSFMessage -Level Verbose -Message "Using reasoning effort: $ReasoningEffort"
+        Write-PSFMessage -Level Debug -Message "Using reasoning effort: $ReasoningEffort"
         $arguments += '--config', "model_reasoning_effort=`"$ReasoningEffort`""
     }
 
@@ -58,7 +58,7 @@ function New-CodexArgument {
     # IMPORTANT: The prompt must come before -i flags or Codex will read from stdin
     $promptToAdd = $null
     if ($TargetFile) {
-        Write-PSFMessage -Level Verbose -Message "Target file: $TargetFile"
+        Write-PSFMessage -Level Debug -Message "Target file: $TargetFile"
 
         # Extract just the filename for the prompt
         $fileName = Split-Path $TargetFile -Leaf
@@ -74,9 +74,9 @@ function New-CodexArgument {
             "Read, edit and save the file: $fileName"
         }
 
-        Write-PSFMessage -Level Verbose -Message "Adding combined prompt with file reference"
+        Write-PSFMessage -Level Debug -Message "Adding combined prompt with file reference"
     } elseif ($Message) {
-        Write-PSFMessage -Level Verbose -Message "Adding prompt message (chat mode)"
+        Write-PSFMessage -Level Debug -Message "Adding prompt message (chat mode)"
         $promptToAdd = $Message
     }
 
@@ -92,7 +92,7 @@ function New-CodexArgument {
             $resolvedPath = Resolve-Path -Path $attachmentPath -ErrorAction SilentlyContinue
             if ($resolvedPath) {
                 $normalizedPath = $resolvedPath.Path -replace '\\', '/'
-                Write-PSFMessage -Level Verbose -Message "Adding attachment: $normalizedPath"
+                Write-PSFMessage -Level Debug -Message "Adding attachment: $normalizedPath"
                 $arguments += '-i', $normalizedPath
             } else {
                 Write-PSFMessage -Level Warning -Message "Could not resolve attachment path: $attachmentPath"

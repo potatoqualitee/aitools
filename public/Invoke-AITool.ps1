@@ -1360,7 +1360,7 @@ function Invoke-AITool {
                 }
             }
 
-            Write-PSFMessage -Level Verbose -Message "Final prompt sent to $currentTool :`n$fullPrompt"
+            Write-PSFMessage -Level Debug -Message "Final prompt sent to $currentTool :`n$fullPrompt"
 
             # Change to target file's directory to resolve workspace permission issues
             $targetDirectory = Split-Path $singleFile -Parent
