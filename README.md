@@ -50,21 +50,6 @@ Each file is processed in a fresh session, which means consistent output without
 
 ---
 
-## How it differs from API wrappers
-
-Most of aitools wraps *agentic CLI tools* - AI assistants that read, understand, and rewrite code - but it also includes [PSOpenAI](https://github.com/mkht/PSOpenAI) for image/video/audio generation and editing.
-
-| API Wrappers (like PSOpenAI)             | Agentic CLI Tools (like Claude Code)        |
-| ---------------------------------------- | -------------------------------------------- |
-| Send prompts, receive text/media         | Open files, understand code, make edits      |
-| You handle file I/O and context          | Built-in file management and context         |
-| Great for generating new content         | Great for refactoring existing code          |
-| Excels at image/video/audio generation   | Specialized for code editing workflows       |
-
-PSOpenAI support is included for image editing and generation capabilities that CLI tools don't yet provide.
-
----
-
 # Getting started
 
 ## Requirements
@@ -179,6 +164,19 @@ Get-ChildItem blog\*.md | Invoke-AITool -Tool Copilot -Prompt ./prompts/update-b
 > **Note:** PSOpenAI is a PowerShell module wrapper (not a CLI), providing capabilities that agentic tools don't yet support like image editing, video generation, and text-to-speech.
 
 > **Tool Name Change:** As of v1.0.5, `ClaudeCode` has been renamed to `Claude` and `GitHubCopilot` to `Copilot` for simplicity. The old names still work as aliases for backward compatibility.
+
+## How it differs from API wrappers
+
+Most of aitools wraps *agentic CLI tools* - AI assistants that read, understand, and rewrite code - but it also includes [PSOpenAI](https://github.com/mkht/PSOpenAI) for image/video/audio generation and editing.
+
+| API Wrappers (like PSOpenAI)             | Agentic CLI Tools (like Claude Code)        |
+| ---------------------------------------- | -------------------------------------------- |
+| Send prompts, receive text/media         | Open files, understand code, make edits      |
+| You handle file I/O and context          | Built-in file management and context         |
+| Great for generating new content         | Great for refactoring existing code          |
+| Excels at image/video/audio generation   | Specialized for code editing workflows       |
+
+PSOpenAI support is included for image editing and generation capabilities that CLI tools don't yet provide.
 
 ---
 
