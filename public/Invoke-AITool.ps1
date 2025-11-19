@@ -72,6 +72,16 @@ function Invoke-AITool {
         to check for file modifications. Defaults to 5. This prevents reprocessing files that were
         recently modified in the main branch history. Only used when on main/master/trunk branches.
 
+    .PARAMETER NoParallel
+        Disables parallel processing and processes files sequentially. By default, when processing
+        4 or more files, they are processed in parallel with up to 3 concurrent threads. Use this
+        switch to force sequential processing regardless of file count.
+
+    .PARAMETER MaxThreads
+        Maximum number of concurrent threads for parallel processing. Default is 3 to avoid API
+        rate limiting. Can be increased for better performance, but higher values may trigger
+        API throttling depending on your service provider's quotas and limits.
+
     .PARAMETER Skip
         Skips the specified number of files from the beginning of the pipeline input.
         Works like Select-Object -Skip. Can be combined with -First and -Last.
@@ -154,9 +164,18 @@ function Invoke-AITool {
         Explicitly attaches an image file for Codex to analyze using the -i flag.
 
     .EXAMPLE
-        Get-ChildItem *.ps1 | Invoke-AITool -Prompt "Add error handling" -Parallel
-        Processes files in parallel with up to 3 concurrent operations, outputting results as they complete.
-        Limited to 3 threads to avoid API throttling at the CLI tool level.
+        Get-ChildItem *.ps1 | Invoke-AITool -Prompt "Add error handling"
+        Processes files in parallel (default behavior for 4+ files) with up to 3 concurrent operations.
+        Results are streamed as they complete.
+
+    .EXAMPLE
+        Get-ChildItem *.ps1 | Invoke-AITool -Prompt "Add error handling" -NoParallel
+        Processes files sequentially one at a time, even if there are many files.
+
+    .EXAMPLE
+        Get-ChildItem *.ps1 | Invoke-AITool -Prompt "Add error handling" -MaxThreads 5
+        Processes files in parallel with up to 5 concurrent operations. WARNING: Higher thread counts
+        may trigger API rate limits depending on your AI service provider's quotas.
 
     .EXAMPLE
         Get-ChildItem *.ps1 | Invoke-AITool -Prompt "Fix bugs" -First 5
@@ -209,7 +228,10 @@ function Invoke-AITool {
         [ValidateRange(1, 100)]
         [int]$CommitDepth = 10,
         [Parameter()]
-        [switch]$Parallel,
+        [switch]$NoParallel,
+        [Parameter()]
+        [ValidateRange(1, 50)]
+        [int]$MaxThreads = 3,
         [Parameter()]
         [ValidateRange(0, [int]::MaxValue)]
         [int]$Skip,
@@ -961,26 +983,39 @@ function Invoke-AITool {
 
         Write-PSFMessage -Level Verbose -Message "Total files queued: $($filesToProcess.Count)"
 
-        # PARALLEL PROCESSING: Setup runspace pool if -Parallel switch is used
-        # Limited to 3 concurrent threads to avoid API throttling at the CLI tool level
+        # Warn if MaxThreads is higher than default (may cause API rate limiting)
+        if ($MaxThreads -gt 3) {
+            Write-PSFMessage -Level Warning -Message "Using $MaxThreads concurrent threads. This may trigger API rate limits depending on your service provider's quotas."
+            Write-Warning "Using $MaxThreads threads may cause API rate limiting. Consider reducing -MaxThreads if you encounter throttling errors."
+        }
+
+        # PARALLEL PROCESSING: Default behavior for 4+ files (unless -NoParallel is specified)
+        # Sequential processing for 1-3 files or when -NoParallel is used
         # (Many AI CLI tools have rate limits and don't handle high concurrency well)
         $pool = $null
         $runspaces = @()
+        $shouldUseParallel = (-not $NoParallel) -and ($filesToProcess.Count -ge 4)
 
         try {
-            if ($Parallel -and $filesToProcess.Count -gt 1) {
-                Write-PSFMessage -Level Verbose -Message "Parallel mode enabled - creating runspace pool with max 3 threads"
-                $pool = [RunspaceFactory]::CreateRunspacePool(1, 3)
+            if ($shouldUseParallel) {
+                Write-PSFMessage -Level Verbose -Message "Parallel mode enabled for $($filesToProcess.Count) files - creating runspace pool with max $MaxThreads threads"
+                $pool = [RunspaceFactory]::CreateRunspacePool(1, $MaxThreads)
                 $pool.ApartmentState = "MTA"
                 $pool.Open()
+            } else {
+                if ($NoParallel) {
+                    Write-PSFMessage -Level Verbose -Message "Sequential processing enforced by -NoParallel switch"
+                } else {
+                    Write-PSFMessage -Level Verbose -Message "Sequential processing (only $($filesToProcess.Count) file(s), parallel is used for 4+ files)"
+                }
             }
 
             $fileIndex = 0
             $totalFiles = $filesToProcess.Count
 
             # If parallel mode is enabled and we have multiple files, use runspaces
-            if ($Parallel -and $pool -and $filesToProcess.Count -gt 1) {
-            Write-PSFMessage -Level Verbose -Message "Processing $totalFiles files in parallel (max 3 concurrent)"
+            if ($shouldUseParallel -and $pool) {
+            Write-PSFMessage -Level Verbose -Message "Processing $totalFiles files in parallel (max $MaxThreads concurrent)"
 
             # Track start time for parallel execution timing
             $parallelStartTime = Get-Date
@@ -1012,6 +1047,7 @@ function Invoke-AITool {
                     Path = $Path
                     Prompt = $Prompt
                     Tool = $Tool
+                    NoParallel = $true  # Force sequential processing in worker threads
                 }
 
                 if ($Context) { $params['Context'] = $Context }
@@ -1021,7 +1057,7 @@ function Invoke-AITool {
                 if ($MaxRetryMinutes) { $params['MaxRetryMinutes'] = $MaxRetryMinutes }
                 if ($SkipModified) { $params['SkipModified'] = $SkipModified }
 
-                # Call Invoke-AITool recursively without -Parallel
+                # Call Invoke-AITool recursively with -NoParallel to prevent nested parallelization
                 Invoke-AITool @params
             }
 
@@ -1060,9 +1096,11 @@ function Invoke-AITool {
 
             Write-PSFMessage -Level Verbose -Message "All runspaces started, waiting for completion and streaming results..."
 
+            # Complete the queuing progress bar before starting the processing one
+            Write-Progress -Activity "Starting parallel processing with $currentTool" -Completed
+
             # Update progress to show we're now processing (not queuing)
             Write-Progress -Activity "Processing files in parallel with $currentTool" -Status "Waiting for results..." -PercentComplete 0
-            Start-Sleep -Milliseconds 50  # Brief pause to ensure progress bar updates
 
             # Poll runspaces and output results as they complete (streaming, not buffering)
             $completedCount = 0
@@ -1086,11 +1124,12 @@ function Invoke-AITool {
                                 $result
                             } else {
                                 # File was skipped (likely by -SkipModified fresh check)
+                                $completedCount++
                                 $fileName = [System.IO.Path]::GetFileName($runspace.File)
                                 Write-PSFMessage -Level Verbose -Message "Skipped (fresh check): $($runspace.File)"
                                 $progressParams = @{
                                     Activity        = "Processing files in parallel with $currentTool"
-                                    Status          = "Skipped (modified): $fileName"
+                                    Status          = "Skipped (modified): $fileName ($completedCount/$totalFiles)"
                                     PercentComplete = ($completedCount / $totalFiles) * 100
                                 }
                                 Write-Progress @progressParams
