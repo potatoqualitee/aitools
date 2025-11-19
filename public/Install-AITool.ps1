@@ -707,12 +707,79 @@ function Install-AITool {
                         Write-PSFMessage -Level Verbose -Message "Added npm global bin to PATH: $npmBin/bin"
                     }
 
-                    # pipx and Cursor Agent install to ~/.local/bin
-                    if ($currentToolName -eq 'Cursor' -or $currentToolName -eq 'Aider') {
+                    # pipx, Cursor Agent, and Claude Code install to ~/.local/bin
+                    if ($currentToolName -eq 'Cursor' -or $currentToolName -eq 'Aider' -or $currentToolName -eq 'ClaudeCode') {
                         $localBin = "${env:HOME}/.local/bin"
                         if (-not ($env:PATH -like "*$localBin*")) {
                             $env:PATH = "${localBin}:${env:PATH}"
                             Write-PSFMessage -Level Verbose -Message "Added ~/.local/bin to PATH: $localBin"
+                        }
+
+                        # Auto-configure persistent PATH for ClaudeCode, Aider, and Cursor
+                        if ($currentToolName -eq 'ClaudeCode' -or $currentToolName -eq 'Aider' -or $currentToolName -eq 'Cursor') {
+                            Write-PSFMessage -Level Verbose -Message "Checking if ~/.local/bin is in persistent shell configuration..."
+
+                            # Detect the shell and configure accordingly
+                            $shellConfigFiles = @()
+
+                            # Bash configuration files (most common on Linux)
+                            if (Test-Path "${env:HOME}/.bashrc") {
+                                $shellConfigFiles += "${env:HOME}/.bashrc"
+                            }
+                            if (Test-Path "${env:HOME}/.bash_profile") {
+                                $shellConfigFiles += "${env:HOME}/.bash_profile"
+                            }
+
+                            # Zsh configuration (common on macOS)
+                            if (Test-Path "${env:HOME}/.zshrc") {
+                                $shellConfigFiles += "${env:HOME}/.zshrc"
+                            }
+
+                            # PowerShell profile (for PowerShell on Linux/macOS)
+                            if ($PROFILE) {
+                                $profileDir = Split-Path -Parent $PROFILE
+                                if (-not (Test-Path $profileDir)) {
+                                    New-Item -ItemType Directory -Path $profileDir -Force | Out-Null
+                                }
+                                if (-not (Test-Path $PROFILE)) {
+                                    New-Item -ItemType File -Path $PROFILE -Force | Out-Null
+                                }
+                                $shellConfigFiles += $PROFILE
+                            }
+
+                            $pathExportLine = 'export PATH="$HOME/.local/bin:$PATH"'
+                            $pwshPathLine = '$env:PATH = "$env:HOME/.local/bin:$env:PATH"'
+
+                            foreach ($configFile in $shellConfigFiles) {
+                                if (Test-Path $configFile) {
+                                    $configContent = Get-Content -Path $configFile -Raw -ErrorAction SilentlyContinue
+
+                                    # Determine which PATH line to use based on file type
+                                    if ($configFile -eq $PROFILE) {
+                                        $pathLineToAdd = $pwshPathLine
+                                        $searchPattern = '\.local/bin.*PATH'
+                                    } else {
+                                        $pathLineToAdd = $pathExportLine
+                                        $searchPattern = '\.local/bin.*PATH'
+                                    }
+
+                                    # Check if PATH configuration already exists
+                                    if (-not ($configContent -match $searchPattern)) {
+                                        Write-PSFMessage -Level Verbose -Message "Adding ~/.local/bin to PATH in $configFile"
+
+                                        # Add PATH configuration to the config file
+                                        Add-Content -Path $configFile -Value "`n# Added by AITools module for $currentToolName`n$pathLineToAdd"
+
+                                        Write-PSFMessage -Level Output -Message "✅ Added ~/.local/bin to PATH in $configFile"
+                                    } else {
+                                        Write-PSFMessage -Level Verbose -Message "~/.local/bin already in PATH configuration in $configFile"
+                                    }
+                                }
+                            }
+
+                            if ($shellConfigFiles.Count -eq 0) {
+                                Write-PSFMessage -Level Warning -Message "No shell configuration files found. Please add ~/.local/bin to your PATH manually."
+                            }
                         }
                     }
                 }
