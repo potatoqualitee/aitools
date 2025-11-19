@@ -20,13 +20,13 @@ function Set-AIToolConfig {
         Default model to use for the tool.
 
     .PARAMETER ReasoningEffort
-        The reasoning effort level for the model (Codex, Aider, ClaudeCode only). Valid values: low, medium, high
+        The reasoning effort level for the model (Codex, Aider, Claude only). Valid values: low, medium, high
 
     .EXAMPLE
         Set-AIToolConfig -Tool Aider -EditMode Diff
 
     .EXAMPLE
-        Set-AIToolConfig -Tool ClaudeCode -PermissionBypass
+        Set-AIToolConfig -Tool Claude -PermissionBypass
 
     .EXAMPLE
         Set-AIToolConfig -Tool Aider -Model "gpt-4"
@@ -57,7 +57,10 @@ function Set-AIToolConfig {
         $toolsToConfig = $script:ToolDefinitions.Keys
         Write-PSFMessage -Level Verbose -Message "Tools to configure: $($toolsToConfig -join ', ')"
     } else {
-        $toolsToConfig = @($Tool)
+        # Resolve tool alias to canonical name
+        $resolvedTool = Resolve-ToolAlias -ToolName $Tool
+        Write-PSFMessage -Level Verbose -Message "Resolved tool name: $resolvedTool"
+        $toolsToConfig = @($resolvedTool)
     }
 
     foreach ($currentTool in $toolsToConfig) {

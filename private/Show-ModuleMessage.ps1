@@ -18,7 +18,7 @@ function Show-ModuleMessage {
         Displays the Aider API key configuration information.
 
     .EXAMPLE
-        Show-ModuleMessage -MessageName 'claudecode-init-prompt' -Level 'Host'
+        Show-ModuleMessage -MessageName 'Claude-init-prompt' -Level 'Host'
         Displays the Claude Code initialization prompt using Host level.
     #>
     [CmdletBinding()]

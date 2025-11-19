@@ -65,6 +65,24 @@ function Invoke-AITool {
         - Staged changes (files added to the index)
         - Committed but not pushed changes (commits unique to this branch)
         Only works in git repositories with an upstream branch configured.
+        When on the main/upstream branch, uses -CommitDepth to check recent commit history instead.
+
+    .PARAMETER CommitDepth
+        When -SkipModified is used on the main/upstream branch, specifies how many recent commits
+        to check for file modifications. Defaults to 5. This prevents reprocessing files that were
+        recently modified in the main branch history. Only used when on main/master/trunk branches.
+
+    .PARAMETER Skip
+        Skips the specified number of files from the beginning of the pipeline input.
+        Works like Select-Object -Skip. Can be combined with -First and -Last.
+
+    .PARAMETER First
+        Processes only the first N files from the pipeline input (after applying -Skip if specified).
+        Works like Select-Object -First. Can be combined with -Last to get both first and last items.
+
+    .PARAMETER Last
+        Processes only the last N files from the pipeline input (after applying -Skip if specified).
+        Works like Select-Object -Last. Can be combined with -First to get both first and last items.
 
     .EXAMPLE
         Get-ChildItem *.Tests.ps1 | Invoke-AITool -Prompt "Refactor from Pester v4 to v5"
@@ -74,7 +92,7 @@ function Invoke-AITool {
         Uses the default prompt with instructions from the context file. File paths are auto-injected.
 
     .EXAMPLE
-        Invoke-AITool -Path "MyFile.ps1" -Prompt "Add help documentation" -Tool ClaudeCode -Verbose
+        Invoke-AITool -Path "MyFile.ps1" -Prompt "Add help documentation" -Tool Claude -Verbose
 
     .EXAMPLE
         Get-ChildItem *.ps1 | Invoke-AITool -Prompt "Fix style" -Context "StyleGuide.md" -Tool Aider -Debug
@@ -87,7 +105,7 @@ function Invoke-AITool {
         Invoke-AITool -Path "test.ps1" -Prompt "Fix code" -Context $contextFiles -Tool Aider
 
     .EXAMPLE
-        Invoke-AITool -Prompt "How do I implement error handling in PowerShell?" -Tool ClaudeCode
+        Invoke-AITool -Prompt "How do I implement error handling in PowerShell?" -Tool Claude
 
     .EXAMPLE
         Invoke-AITool -Path "complex.ps1" -Prompt "Optimize this code" -Tool Codex -ReasoningEffort high
@@ -115,12 +133,17 @@ function Invoke-AITool {
         staged changes, or committed but not pushed changes.
 
     .EXAMPLE
+        Get-ChildItem *.ps1 | Invoke-AITool -Prompt "Add error handling" -SkipModified -CommitDepth 10
+        When on main branch, checks the last 10 commits for modified files to skip. When on a feature
+        branch, uses the standard behavior of checking uncommitted/unpushed changes.
+
+    .EXAMPLE
         Get-ChildItem diagram.png | Invoke-AITool -Prompt "Describe what's in this image" -Tool Codex
         Pipes an image file which is automatically detected and treated as an attachment for Codex (using -i flag).
 
     .EXAMPLE
-        Get-ChildItem photo.jpg | Invoke-AITool -Prompt "Describe this image" -Tool ClaudeCode
-        Pipes an image file to ClaudeCode as a regular file. ClaudeCode can analyze and describe the image.
+        Get-ChildItem photo.jpg | Invoke-AITool -Prompt "Describe this image" -Tool Claude
+        Pipes an image file to Claude as a regular file. Claude can analyze and describe the image.
 
     .EXAMPLE
         Get-ChildItem photo.jpg | Invoke-AITool -Prompt "Write a Python script using PIL to add a 10px white border" -Tool Codex
@@ -129,6 +152,27 @@ function Invoke-AITool {
     .EXAMPLE
         Invoke-AITool -Attachment "screenshot.png" -Prompt "What UI framework was used?" -Tool Codex
         Explicitly attaches an image file for Codex to analyze using the -i flag.
+
+    .EXAMPLE
+        Get-ChildItem *.ps1 | Invoke-AITool -Prompt "Add error handling" -Parallel
+        Processes files in parallel with up to 3 concurrent operations, outputting results as they complete.
+        Limited to 3 threads to avoid API throttling at the CLI tool level.
+
+    .EXAMPLE
+        Get-ChildItem *.ps1 | Invoke-AITool -Prompt "Fix bugs" -First 5
+        Processes only the first 5 PowerShell files from the pipeline.
+
+    .EXAMPLE
+        Get-ChildItem *.ps1 | Invoke-AITool -Prompt "Fix bugs" -Skip 2 -First 3
+        Skips the first 2 files, then processes the next 3 files (files 3, 4, and 5).
+
+    .EXAMPLE
+        Get-ChildItem *.ps1 | Invoke-AITool -Prompt "Fix bugs" -Last 3
+        Processes only the last 3 PowerShell files from the pipeline.
+
+    .EXAMPLE
+        Get-ChildItem *.ps1 | Invoke-AITool -Prompt "Fix bugs" -First 2 -Last 2
+        Processes the first 2 and last 2 files from the pipeline (like Select-Object behavior).
     #>
     [CmdletBinding()]
     param(
@@ -160,7 +204,21 @@ function Invoke-AITool {
         [ValidateRange(1, 1440)]  # 1 minute to 24 hours
         [int]$MaxRetryMinutes = 240,
         [Parameter()]
-        [switch]$SkipModified
+        [switch]$SkipModified,
+        [Parameter()]
+        [ValidateRange(1, 100)]
+        [int]$CommitDepth = 10,
+        [Parameter()]
+        [switch]$Parallel,
+        [Parameter()]
+        [ValidateRange(0, [int]::MaxValue)]
+        [int]$Skip,
+        [Parameter()]
+        [ValidateRange(1, [int]::MaxValue)]
+        [int]$First,
+        [Parameter()]
+        [ValidateRange(1, [int]::MaxValue)]
+        [int]$Last
     )
 
     begin {
@@ -174,73 +232,111 @@ function Invoke-AITool {
             $imageAttachments = @($Attachment)
         }
 
-        # Get list of modified files from git if -SkipModified is specified
-        $gitModifiedFiles = @()
+        # Setup git context and initial snapshot if -SkipModified is specified
+        $gitContext = $null
+        $initialModifiedSnapshot = @{}
+        $script:cachedRepoRoot = $null
         if ($SkipModified) {
             try {
                 # Check if we're in a git repository
                 $null = git rev-parse --is-inside-work-tree 2>&1
                 if ($LASTEXITCODE -eq 0) {
-                    Write-PSFMessage -Level Verbose -Message "Git repository detected, checking for files changed from upstream"
+                    Write-PSFMessage -Level Verbose -Message "Git repository detected, performing initial scan then per-file verification"
 
-                    # Get the remote's default branch (what origin/HEAD points to)
-                    $upstreamBranch = git symbolic-ref refs/remotes/origin/HEAD 2>&1 | ForEach-Object { $_ -replace 'refs/remotes/', '' }
+                    # Get and cache repo root
+                    $script:cachedRepoRoot = git rev-parse --show-toplevel 2>&1
                     if ($LASTEXITCODE -ne 0) {
-                        Write-PSFMessage -Level Warning -Message "Could not determine remote default branch. -SkipModified will be skipped."
-                        $gitModifiedFiles = @()
+                        Write-PSFMessage -Level Warning -Message "Could not determine repo root. -SkipModified will be skipped."
+                        $script:cachedRepoRoot = $null
                     } else {
-                        Write-PSFMessage -Level Verbose -Message "Using remote default branch: $upstreamBranch"
+                        $script:cachedRepoRoot = $script:cachedRepoRoot -replace '/', '\'
+                        Write-PSFMessage -Level Verbose -Message "Cached repo root: $script:cachedRepoRoot"
 
-                        # Get ALL modified files:
-                        # 1. Uncommitted working tree changes (git diff --name-only)
-                        # 2. Staged changes (git diff --name-only --cached)
-                        # 3. Committed but not pushed changes (git diff --name-only upstream..HEAD)
-                        $allModifiedFiles = @()
+                        # Get current branch name
+                        $currentBranch = git rev-parse --abbrev-ref HEAD 2>&1
+                        if ($LASTEXITCODE -ne 0) {
+                            Write-PSFMessage -Level Warning -Message "Could not determine current branch. -SkipModified will be skipped."
+                        } else {
+                            # Get the remote's default branch (what origin/HEAD points to)
+                            $upstreamBranch = git symbolic-ref refs/remotes/origin/HEAD 2>&1 | ForEach-Object { $_ -replace 'refs/remotes/', '' }
+                            if ($LASTEXITCODE -ne 0) {
+                                Write-PSFMessage -Level Warning -Message "Could not determine remote default branch. -SkipModified will be skipped."
+                            } else {
+                                # Check if we're on the main/upstream branch (main, master, trunk, or whatever upstream points to)
+                                $upstreamBranchName = $upstreamBranch -replace '^origin/', ''
+                                $isOnMainBranch = $currentBranch -in @('main', 'master', 'trunk', $upstreamBranchName)
 
-                        # Get uncommitted working tree changes
-                        $workingTreeChanges = git diff --name-only 2>&1 | Where-Object { $_ -is [string] }
-                        if ($LASTEXITCODE -eq 0 -and $workingTreeChanges) {
-                            $allModifiedFiles += $workingTreeChanges
-                            Write-PSFMessage -Level Verbose -Message "Found $(@($workingTreeChanges).Count) uncommitted working tree change(s)"
-                        }
+                                if ($isOnMainBranch) {
+                                    Write-PSFMessage -Level Warning -Message "You are on the main branch '$currentBranch'. Using -CommitDepth $CommitDepth to check recent commit history for modified files."
+                                }
 
-                        # Get staged changes
-                        $stagedChanges = git diff --name-only --cached 2>&1 | Where-Object { $_ -is [string] }
-                        if ($LASTEXITCODE -eq 0 -and $stagedChanges) {
-                            $allModifiedFiles += $stagedChanges
-                            Write-PSFMessage -Level Verbose -Message "Found $(@($stagedChanges).Count) staged change(s)"
-                        }
+                                Write-PSFMessage -Level Verbose -Message "Using remote default branch: $upstreamBranch"
 
-                        # Get committed but not pushed changes
-                        $committedChanges = git diff --name-only "$upstreamBranch..HEAD" 2>&1 | Where-Object { $_ -is [string] }
-                        if ($LASTEXITCODE -eq 0 -and $committedChanges) {
-                            $allModifiedFiles += $committedChanges
-                            Write-PSFMessage -Level Verbose -Message "Found $(@($committedChanges).Count) committed but not pushed change(s)"
-                        }
+                                # Store git context for per-file checking
+                                $gitContext = @{
+                                    UpstreamBranch = $upstreamBranch
+                                    IsOnMainBranch = $isOnMainBranch
+                                    CommitDepth = $CommitDepth
+                                    CurrentBranch = $currentBranch
+                                }
 
-                        if ($allModifiedFiles.Count -gt 0) {
-                            # Remove duplicates and resolve to absolute paths
-                            $gitModifiedFiles = $allModifiedFiles | Select-Object -Unique | ForEach-Object {
-                                $filename = $_.Trim()
-                                if ($filename) {
-                                    # Resolve to absolute path
-                                    $resolvedPath = Join-Path (Get-Location) $filename | Resolve-Path -ErrorAction SilentlyContinue
-                                    if ($resolvedPath) {
-                                        # Normalize to forward slashes for consistency
-                                        $resolvedPath.Path -replace '\\', '/'
+                                # Initial sweep: Build snapshot of all modified files (quick bulk check)
+                                Write-PSFMessage -Level Verbose -Message "Performing initial sweep of modified files..."
+                                $allModifiedFiles = @()
+
+                                # Get uncommitted working tree changes
+                                $workingTreeChanges = git diff --name-only 2>&1 | Where-Object { $_ -is [string] }
+                                if ($LASTEXITCODE -eq 0 -and $workingTreeChanges) {
+                                    $allModifiedFiles += $workingTreeChanges
+                                    Write-PSFMessage -Level Verbose -Message "Found $(@($workingTreeChanges).Count) uncommitted working tree change(s)"
+                                }
+
+                                # Get staged changes
+                                $stagedChanges = git diff --name-only --cached 2>&1 | Where-Object { $_ -is [string] }
+                                if ($LASTEXITCODE -eq 0 -and $stagedChanges) {
+                                    $allModifiedFiles += $stagedChanges
+                                    Write-PSFMessage -Level Verbose -Message "Found $(@($stagedChanges).Count) staged change(s)"
+                                }
+
+                                # Get committed changes based on branch
+                                if ($isOnMainBranch) {
+                                    $recentCommitChanges = git log -n $CommitDepth --name-only --pretty=format: 2>&1 | Where-Object { $_ -is [string] -and $_.Trim() }
+                                    if ($LASTEXITCODE -eq 0 -and $recentCommitChanges) {
+                                        $allModifiedFiles += $recentCommitChanges
+                                        Write-PSFMessage -Level Verbose -Message "Found $(@($recentCommitChanges).Count) file(s) modified in last $CommitDepth commit(s)"
+                                    }
+                                } else {
+                                    $committedChanges = git diff --name-only "$upstreamBranch..HEAD" 2>&1 | Where-Object { $_ -is [string] }
+                                    if ($LASTEXITCODE -eq 0 -and $committedChanges) {
+                                        $allModifiedFiles += $committedChanges
+                                        Write-PSFMessage -Level Verbose -Message "Found $(@($committedChanges).Count) committed but not pushed change(s)"
                                     }
                                 }
-                            } | Where-Object { $_ }
-                            Write-PSFMessage -Level Verbose -Message "Total unique files to skip: $($gitModifiedFiles.Count)"
-                        } else {
-                            Write-PSFMessage -Level Verbose -Message "No modified files found"
+
+                                # Convert to hashtable for O(1) lookups and normalize paths
+                                if ($allModifiedFiles.Count -gt 0) {
+                                    $allModifiedFiles | Select-Object -Unique | ForEach-Object {
+                                        $filename = $_.Trim()
+                                        if ($filename) {
+                                            $resolvedPath = Join-Path $script:cachedRepoRoot $filename | Resolve-Path -ErrorAction SilentlyContinue
+                                            if ($resolvedPath) {
+                                                $normalizedPath = $resolvedPath.Path -replace '\\', '/'
+                                                $initialModifiedSnapshot[$normalizedPath] = $true
+                                            }
+                                        }
+                                    }
+                                    Write-PSFMessage -Level Verbose -Message "Initial sweep: $($initialModifiedSnapshot.Count) modified files to potentially skip"
+                                } else {
+                                    Write-PSFMessage -Level Verbose -Message "Initial sweep: No modified files found"
+                                }
+                            }
                         }
                     }
                 } else {
                     Write-PSFMessage -Level Warning -Message "-SkipModified specified but not in a git repository. Parameter will be ignored."
                 }
             } catch {
-                Write-PSFMessage -Level Warning -Message "Failed to check git diff: $_. -SkipModified will be ignored."
+                Write-PSFMessage -Level Warning -Message "Failed to setup git context: $_. -SkipModified will be ignored."
             }
         }
 
@@ -355,6 +451,9 @@ function Invoke-AITool {
             Write-PSFMessage -Level Verbose -Message "Using default tool: $Tool"
         }
 
+        # Resolve tool alias to canonical name (e.g., "Code" -> "Claude", "Copilot" -> "Copilot")
+        $Tool = Resolve-ToolAlias -ToolName $Tool
+
         Write-PSFMessage -Level Verbose -Message "Starting Invoke-AITool with tool: $Tool"
 
         # Handle "All" tool selection - get all available tools
@@ -378,27 +477,36 @@ function Invoke-AITool {
         }
 
         $filesToProcess = @()
+        $script:totalInputFiles = 0
     }
 
     process {
         foreach ($file in $Path) {
+            $script:totalInputFiles++
             $resolvedPath = Resolve-Path -Path $file -ErrorAction SilentlyContinue
             if ($resolvedPath) {
                 # Normalize path to use forward slashes for cross-platform CLI compatibility
                 $normalizedPath = $resolvedPath.Path -replace '\\', '/'
 
-                # Skip if file is modified in git and -SkipModified is specified
-                if ($SkipModified -and $gitModifiedFiles -contains $normalizedPath) {
-                    Write-PSFMessage -Level Verbose -Message "Skipping modified file: $normalizedPath"
-                    continue
+                # Stage 1: Quick check against initial snapshot if -SkipModified is specified
+                if ($SkipModified -and $gitContext) {
+                    if ($initialModifiedSnapshot.ContainsKey($normalizedPath)) {
+                        Write-PSFMessage -Level Verbose -Message "Skipping file (initial sweep): $normalizedPath"
+                        continue
+                    }
                 }
 
                 # Check if this is an image file - route to attachments for Codex, regular files for others
                 $extension = [System.IO.Path]::GetExtension($normalizedPath).ToLower()
                 $validImageExtensions = @('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp', '.svg')
 
-                # Determine the effective tool (considering default)
-                $effectiveTool = if ($Tool) { $Tool } else { Get-PSFConfigValue -FullName 'AITools.DefaultTool' -Fallback $null }
+                # Determine the effective tool (considering default and aliases)
+                $effectiveTool = if ($Tool) {
+                    Resolve-ToolAlias -ToolName $Tool
+                } else {
+                    $defaultTool = Get-PSFConfigValue -FullName 'AITools.DefaultTool' -Fallback $null
+                    if ($defaultTool) { Resolve-ToolAlias -ToolName $defaultTool } else { $null }
+                }
 
                 if ($extension -in $validImageExtensions -and $effectiveTool -eq 'Codex') {
                     Write-PSFMessage -Level Verbose -Message "Detected image file for Codex, adding as attachment: $normalizedPath"
@@ -433,6 +541,33 @@ function Invoke-AITool {
             }
 
             Write-PSFMessage -Level Verbose -Message "Validated $($imageAttachments.Count) attachment(s): $($imageAttachments -join ', ')"
+        }
+
+        # Apply -Skip, -First, and -Last filtering using Select-Object
+        if ($filesToProcess.Count -gt 0 -and (Test-PSFParameterBinding -ParameterName 'Skip', 'First', 'Last')) {
+            $originalCount = $filesToProcess.Count
+
+            # Build Select-Object parameters dynamically
+            $selectParams = @{}
+            if (Test-PSFParameterBinding -ParameterName 'Skip') { $selectParams['Skip'] = $Skip }
+            if (Test-PSFParameterBinding -ParameterName 'First') { $selectParams['First'] = $First }
+            if (Test-PSFParameterBinding -ParameterName 'Last') { $selectParams['Last'] = $Last }
+
+            # Apply filtering using Select-Object (ensures exact same behavior)
+            $filesToProcess = @($filesToProcess | Select-Object @selectParams)
+
+            # Log filtering results
+            Write-PSFMessage -Level Verbose -Message "File filtering applied: $originalCount → $($filesToProcess.Count) file(s) (Skip:$Skip First:$First Last:$Last)"
+            if ($filesToProcess.Count -ne $originalCount) {
+                Write-Information "Filtered to $($filesToProcess.Count) of $originalCount file(s) based on -Skip/-First/-Last parameters" -InformationAction Continue
+            }
+        }
+
+        # Early check: If no files to process and user expects file processing (not chat mode), exit early
+        if ($filesToProcess.Count -eq 0 -and $script:totalInputFiles -gt 0) {
+            Write-PSFMessage -Level Warning -Message "All $script:totalInputFiles file(s) were skipped (likely due to -SkipModified filtering). No files to process."
+            Write-Information "All $script:totalInputFiles file(s) were skipped. Nothing to process." -InformationAction Continue
+            return
         }
 
         # Loop through each tool (will be one tool or multiple if "All" was selected)
@@ -483,20 +618,20 @@ function Invoke-AITool {
                     }
                 }
 
-                # Add ClaudeCode reasoning trigger if needed
-                if ($currentTool -eq 'ClaudeCode' -and $reasoningEffortToUse) {
+                # Add Claude reasoning trigger if needed
+                if ($currentTool -eq 'Claude' -and $reasoningEffortToUse) {
                     $reasoningPhrase = switch ($reasoningEffortToUse) {
                         'low'    { 'think hard' }
                         'medium' { 'think harder' }
                         'high'   { 'ultrathink' }
                     }
-                    Write-PSFMessage -Level Verbose -Message "Adding ClaudeCode reasoning trigger: $reasoningPhrase"
+                    Write-PSFMessage -Level Verbose -Message "Adding Claude reasoning trigger: $reasoningPhrase"
                     $fullPrompt += "`n`n$reasoningPhrase"
                 }
 
                 Write-PSFMessage -Level Verbose -Message "Building arguments for chat mode with $currentTool"
                 $arguments = switch ($currentTool) {
-                'ClaudeCode' {
+                'Claude' {
                     $argumentParams = @{
                         Message             = $fullPrompt
                         Model               = $modelToUse
@@ -534,7 +669,7 @@ function Invoke-AITool {
                     }
                     New-GeminiArgument @argumentParams
                 }
-                'GitHubCopilot' {
+                'Copilot' {
                     $argumentParams = @{
                         Message             = $fullPrompt
                         Model               = $modelToUse
@@ -826,10 +961,218 @@ function Invoke-AITool {
 
         Write-PSFMessage -Level Verbose -Message "Total files queued: $($filesToProcess.Count)"
 
-        $fileIndex = 0
-        $totalFiles = $filesToProcess.Count
-        foreach ($singleFile in $filesToProcess) {
+        # PARALLEL PROCESSING: Setup runspace pool if -Parallel switch is used
+        # Limited to 3 concurrent threads to avoid API throttling at the CLI tool level
+        # (Many AI CLI tools have rate limits and don't handle high concurrency well)
+        $pool = $null
+        $runspaces = @()
+
+        try {
+            if ($Parallel -and $filesToProcess.Count -gt 1) {
+                Write-PSFMessage -Level Verbose -Message "Parallel mode enabled - creating runspace pool with max 3 threads"
+                $pool = [RunspaceFactory]::CreateRunspacePool(1, 3)
+                $pool.ApartmentState = "MTA"
+                $pool.Open()
+            }
+
+            $fileIndex = 0
+            $totalFiles = $filesToProcess.Count
+
+            # If parallel mode is enabled and we have multiple files, use runspaces
+            if ($Parallel -and $pool -and $filesToProcess.Count -gt 1) {
+            Write-PSFMessage -Level Verbose -Message "Processing $totalFiles files in parallel (max 3 concurrent)"
+
+            # Track start time for parallel execution timing
+            $parallelStartTime = Get-Date
+            $allDurations = [System.Collections.ArrayList]::new()
+
+            # Get the module path for loading in runspaces
+            $modulePsmPath = Join-Path $script:ModuleRoot "aitools.psm1"
+
+            # Create scriptblock for parallel execution - just call Invoke-AITool recursively
+            $scriptblock = {
+                param(
+                    $ModulePath,
+                    $Path,
+                    $Prompt,
+                    $Tool,
+                    $Context,
+                    $Model,
+                    $ReasoningEffort,
+                    $DisableRetry,
+                    $MaxRetryMinutes,
+                    $SkipModified
+                )
+
+                # Import the module from the provided path
+                Import-Module $ModulePath -ErrorAction Stop
+
+                # Build parameters for recursive call
+                $params = @{
+                    Path = $Path
+                    Prompt = $Prompt
+                    Tool = $Tool
+                }
+
+                if ($Context) { $params['Context'] = $Context }
+                if ($Model) { $params['Model'] = $Model }
+                if ($ReasoningEffort) { $params['ReasoningEffort'] = $ReasoningEffort }
+                if ($DisableRetry) { $params['DisableRetry'] = $DisableRetry }
+                if ($MaxRetryMinutes) { $params['MaxRetryMinutes'] = $MaxRetryMinutes }
+                if ($SkipModified) { $params['SkipModified'] = $SkipModified }
+
+                # Call Invoke-AITool recursively without -Parallel
+                Invoke-AITool @params
+            }
+
+            # Create and start runspaces for each file
+            foreach ($singleFile in $filesToProcess) {
+                $fileIndex++
+                Write-PSFMessage -Level Verbose -Message "Queuing file $fileIndex of $totalFiles for parallel processing: $singleFile"
+                $progressParams = @{
+                    Activity        = "Starting parallel processing with $currentTool"
+                    Status          = "Queuing files ($fileIndex/$totalFiles)"
+                    PercentComplete = ($fileIndex / $totalFiles) * 100
+                }
+                Write-Progress @progressParams
+
+                $runspace = [PowerShell]::Create()
+                $null = $runspace.AddScript($scriptblock)
+                $null = $runspace.AddArgument($modulePsmPath)        # ModulePath
+                $null = $runspace.AddArgument($singleFile)           # Path
+                $null = $runspace.AddArgument($promptText)           # Prompt
+                $null = $runspace.AddArgument($currentTool)          # Tool
+                $null = $runspace.AddArgument($contextFiles)         # Context
+                $null = $runspace.AddArgument($modelToUse)           # Model
+                $null = $runspace.AddArgument($reasoningEffortToUse) # ReasoningEffort
+                $null = $runspace.AddArgument($DisableRetry)         # DisableRetry
+                $null = $runspace.AddArgument($MaxRetryMinutes)      # MaxRetryMinutes
+                $null = $runspace.AddArgument($SkipModified)         # SkipModified
+                $runspace.RunspacePool = $pool
+
+                $runspaces += [PSCustomObject]@{
+                    Pipe = $runspace
+                    Status = $runspace.BeginInvoke()
+                    File = $singleFile
+                    Index = $fileIndex
+                }
+            }
+
+            Write-PSFMessage -Level Verbose -Message "All runspaces started, waiting for completion and streaming results..."
+
+            # Update progress to show we're now processing (not queuing)
+            Write-Progress -Activity "Processing files in parallel with $currentTool" -Status "Waiting for results..." -PercentComplete 0
+            Start-Sleep -Milliseconds 50  # Brief pause to ensure progress bar updates
+
+            # Poll runspaces and output results as they complete (streaming, not buffering)
+            $completedCount = 0
+            while ($runspaces.Count -gt 0) {
+                foreach ($runspace in @($runspaces)) {
+                    if ($runspace.Status.IsCompleted) {
+                        try {
+                            $result = $runspace.Pipe.EndInvoke($runspace.Status)
+                            if ($result) {
+                                $completedCount++
+                                $fileName = [System.IO.Path]::GetFileName($runspace.File)
+                                Write-PSFMessage -Level Verbose -Message "Completed $completedCount of $totalFiles files"
+                                $progressParams = @{
+                                    Activity        = "Processing files in parallel with $currentTool"
+                                    Status          = "Completed: $fileName ($completedCount/$totalFiles)"
+                                    PercentComplete = ($completedCount / $totalFiles) * 100
+                                }
+                                Write-Progress @progressParams
+                                # Store duration for time calculation and output result to pipeline immediately
+                                $null = $allDurations.Add($result.Duration.TotalSeconds)
+                                $result
+                            } else {
+                                # File was skipped (likely by -SkipModified fresh check)
+                                $fileName = [System.IO.Path]::GetFileName($runspace.File)
+                                Write-PSFMessage -Level Verbose -Message "Skipped (fresh check): $($runspace.File)"
+                                $progressParams = @{
+                                    Activity        = "Processing files in parallel with $currentTool"
+                                    Status          = "Skipped (modified): $fileName"
+                                    PercentComplete = ($completedCount / $totalFiles) * 100
+                                }
+                                Write-Progress @progressParams
+                            }
+                        } catch {
+                            Write-PSFMessage -Level Error -Message "Error retrieving result for $($runspace.File): $_"
+                        } finally {
+                            $runspace.Pipe.Dispose()
+                            $runspaces = $runspaces | Where-Object { $_.Status -ne $runspace.Status }
+                        }
+                    }
+                }
+
+                # Short sleep to avoid tight polling loop
+                if ($runspaces.Count -gt 0) {
+                    Start-Sleep -Milliseconds 100
+                }
+            }
+
+            Write-PSFMessage -Level Verbose -Message "All parallel processing complete"
+            Write-Progress -Activity "Processing files in parallel with $currentTool" -Completed
+
+            # Calculate and report time savings from parallel execution
+            $parallelEndTime = Get-Date
+            $totalParallelTime = ($parallelEndTime - $parallelStartTime).TotalSeconds
+            # Sum the duration of all completed tasks (already in seconds)
+            $totalSequentialTime = ($allDurations | Measure-Object -Sum).Sum
+            $timeSaved = $totalSequentialTime - $totalParallelTime
+            $percentSaved = if ($totalSequentialTime -gt 0) { ($timeSaved / $totalSequentialTime) * 100 } else { 0 }
+
+            Write-PSFMessage -Level Verbose -Message "Parallel execution completed in $([Math]::Round($totalParallelTime, 1))s vs estimated sequential time of $([Math]::Round($totalSequentialTime, 1))s"
+            if ($timeSaved -gt 0) {
+                Write-PSFMessage -Level Verbose -Message "Time saved: $([Math]::Round($timeSaved, 1))s ($([Math]::Round($percentSaved, 1))% faster)"
+            }
+        } else {
+            # Original sequential processing
+            foreach ($singleFile in $filesToProcess) {
             $fileIndex++
+
+            # Stage 2: Fresh verification right before execution (if -SkipModified is enabled)
+            # This catches files modified by concurrent processes or previous file processing
+            if ($SkipModified -and $gitContext -and $script:cachedRepoRoot) {
+                Write-PSFMessage -Level Verbose -Message "Fresh check before processing: $singleFile"
+
+                # Quick single-file check using git diff with file path (fast, 2 git commands)
+                # Uses cached repo root to avoid repeated git rev-parse calls
+                $isModified = $false
+
+                try {
+                    # Normalize both paths to forward slashes for comparison
+                    $normalizedFile = $singleFile -replace '\\', '/'
+                    $normalizedRepoRoot = $script:cachedRepoRoot -replace '\\', '/'
+                    $escapedRepoRoot = [regex]::Escape($normalizedRepoRoot)
+
+                    # Remove repo root prefix and leading slash to get relative path
+                    $relativePath = $normalizedFile -replace "^$escapedRepoRoot", '' -replace '^/', ''
+
+                    # Check uncommitted changes for this specific file
+                    $workingTreeCheck = git diff --name-only -- $relativePath 2>&1
+                    if ($LASTEXITCODE -eq 0 -and $workingTreeCheck) {
+                        Write-PSFMessage -Level Verbose -Message "File has uncommitted changes: $singleFile"
+                        $isModified = $true
+                    }
+
+                    # Check staged changes for this specific file
+                    if (-not $isModified) {
+                        $stagedCheck = git diff --name-only --cached -- $relativePath 2>&1
+                        if ($LASTEXITCODE -eq 0 -and $stagedCheck) {
+                            Write-PSFMessage -Level Verbose -Message "File has staged changes: $singleFile"
+                            $isModified = $true
+                        }
+                    }
+                } catch {
+                    Write-PSFMessage -Level Warning -Message "Error during fresh check: $_. Skipping file to be safe."
+                    $isModified = $true
+                }
+
+                if ($isModified) {
+                    Write-PSFMessage -Level Verbose -Message "Skipping file (fresh check): $singleFile"
+                    continue
+                }
+            }
 
             Write-PSFMessage -Level Debug -Message "Processing file $fileIndex of $totalFiles - $singleFile"
 
@@ -844,7 +1187,7 @@ function Invoke-AITool {
 
             # Build combined prompt with context files for non-Aider tools
             # For GitHub Copilot, use @ prefix to tell it to read files directly
-            if ($currentTool -eq 'GitHubCopilot') {
+            if ($currentTool -eq 'Copilot') {
                 # Check if the prompt was originally a file path (has the "(File: ...)" suffix)
                 if ($promptText -match '\(File: (.+)\)$') {
                     # Extract the original prompt file path
@@ -883,20 +1226,20 @@ function Invoke-AITool {
                 }
             }
 
-            # Add ClaudeCode reasoning trigger if needed
-            if ($currentTool -eq 'ClaudeCode' -and $reasoningEffortToUse) {
+            # Add Claude reasoning trigger if needed
+            if ($currentTool -eq 'Claude' -and $reasoningEffortToUse) {
                 $reasoningPhrase = switch ($reasoningEffortToUse) {
                     'low'    { 'think hard' }
                     'medium' { 'think harder' }
                     'high'   { 'ultrathink' }
                 }
-                Write-PSFMessage -Level Verbose -Message "Adding ClaudeCode reasoning trigger: $reasoningPhrase"
+                Write-PSFMessage -Level Verbose -Message "Adding Claude reasoning trigger: $reasoningPhrase"
                 $fullPrompt += "`n`n$reasoningPhrase"
             }
 
                 Write-PSFMessage -Level Verbose -Message "Building arguments for $currentTool"
                 $arguments = switch ($currentTool) {
-                'ClaudeCode' {
+                'Claude' {
                     $argumentParams = @{
                         TargetFile          = $singleFile
                         Message             = $promptText
@@ -937,7 +1280,7 @@ function Invoke-AITool {
                     }
                     New-GeminiArgument @argumentParams
                 }
-                'GitHubCopilot' {
+                'Copilot' {
                     $argumentParams = @{
                         TargetFile          = $singleFile
                         Message             = $promptText
@@ -1261,9 +1604,37 @@ function Invoke-AITool {
                 Write-PSFMessage -Level Verbose -Message "Waiting $DelaySeconds seconds before processing next file..."
                 Start-Sleep -Seconds $DelaySeconds
             }
-        } # End of foreach ($singleFile in $filesToProcess)
+            } # End of foreach ($singleFile in $filesToProcess)
+            } # End of if ($Parallel) / else block
 
-        Write-Progress -Activity "Processing with $currentTool" -Completed
+            Write-Progress -Activity "Processing with $currentTool" -Completed
+        } finally {
+            # Clean up runspace pool if it was created (runs even on Ctrl+C)
+            if ($pool) {
+                Write-PSFMessage -Level Verbose -Message "Cleaning up runspace pool (disposing runspaces and pool)"
+
+                # Stop and dispose any remaining runspaces
+                foreach ($runspace in $runspaces) {
+                    if ($runspace.Pipe) {
+                        try {
+                            $runspace.Pipe.Stop()
+                            $runspace.Pipe.Dispose()
+                        } catch {
+                            Write-PSFMessage -Level Debug -Message "Error disposing runspace: $_"
+                        }
+                    }
+                }
+
+                # Close and dispose the pool
+                try {
+                    $pool.Close()
+                    $pool.Dispose()
+                    Write-PSFMessage -Level Verbose -Message "Runspace pool cleaned up successfully"
+                } catch {
+                    Write-PSFMessage -Level Warning -Message "Error closing runspace pool: $_"
+                }
+            }
+        }
 
             # Apply delay between tools when using -Tool All (if not the last tool)
             if ($DelaySeconds -gt 0 -and $toolsToRun.Count -gt 1 -and $currentTool -ne $toolsToRun[-1]) {

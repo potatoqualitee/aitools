@@ -8,11 +8,11 @@ function Update-AITool {
         to their latest versions. If no tool name is specified, updates all currently installed tools.
 
     .PARAMETER Name
-        The name of the AI tool to update. Valid values: ClaudeCode, Aider, Gemini, GitHubCopilot, Codex
+        The name of the AI tool to update. Valid values: Claude, Aider, Gemini, Copilot, Codex
         If not specified, all installed tools will be updated.
 
     .EXAMPLE
-        Update-AITool -Name ClaudeCode
+        Update-AITool -Name Claude
         Updates only Claude Code to the latest version and returns installation details.
 
     .EXAMPLE
@@ -33,8 +33,12 @@ function Update-AITool {
     begin {
         if ($Name) {
             Write-PSFMessage -Level Verbose -Message "Starting update of $Name"
+            # Resolve tool alias to canonical name
+            $resolvedName = Resolve-ToolAlias -ToolName $Name
+            Write-PSFMessage -Level Verbose -Message "Resolved tool name: $resolvedName"
         } else {
             Write-PSFMessage -Level Verbose -Message "Starting update of all installed AI tools"
+            $resolvedName = $null
         }
     }
 
@@ -42,14 +46,14 @@ function Update-AITool {
         # Determine which tools to update
         $toolsToUpdate = @()
 
-        if ($Name) {
+        if ($resolvedName) {
             Write-Progress -Activity "Updating AI Tools" -Status "Validating tool name" -PercentComplete 10
             # Update specific tool
-            if ($script:ToolDefinitions.ContainsKey($Name)) {
-                $toolsToUpdate += $Name
+            if ($script:ToolDefinitions.ContainsKey($resolvedName)) {
+                $toolsToUpdate += $resolvedName
             } else {
                 Write-Progress -Activity "Updating AI Tools" -Completed
-                Stop-PSFFunction -Message "Unknown tool: $Name" -EnableException $true
+                Stop-PSFFunction -Message "Unknown tool: $resolvedName" -EnableException $true
                 return
             }
         } else {

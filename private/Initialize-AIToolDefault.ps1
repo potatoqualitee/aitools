@@ -38,6 +38,6 @@ function Initialize-AIToolDefault {
         }
 
         Write-PSFMessage -Level Verbose -Message "`nTo install a tool, run: Install-AITool -Name <ToolName>"
-        Write-PSFMessage -Level Verbose -Message "Example: Install-AITool -Name ClaudeCode"
+        Write-PSFMessage -Level Verbose -Message "Example: Install-AITool -Name Claude"
     }
 }

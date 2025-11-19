@@ -25,7 +25,7 @@ aitools wraps *agentic CLI tools* (AI assistants that actually read, understand,
 Install-Module aitools
 
 # Install Claude Code
-Install-AITool -Name ClaudeCode
+Install-AITool -Name Claude
 
 # Migrate all your Pester tests from v4 to v5
 Get-ChildItem tests\*.Tests.ps1 | Update-PesterTest
@@ -88,7 +88,7 @@ Pick the AI assistant you want to use:
 
 ```powershell
 # Install one
-Install-AITool -Name ClaudeCode
+Install-AITool -Name Claude
 
 # Or several
 Install-AITool -Name Gemini, Aider
@@ -100,7 +100,7 @@ Install-AITool -Name All
 ### Set your default tool
 
 ```powershell
-Set-AIToolDefault -Tool ClaudeCode
+Set-AIToolDefault -Tool Claude
 ```
 
 Now any aitools command will use Claude Code unless you specify otherwise.
@@ -188,7 +188,7 @@ $params = @{
         "./docs/new-api-spec.md",
         "./docs/style-guide.md"
     )
-    Tool            = "ClaudeCode"
+    Tool            = "Claude"
 }
 Invoke-AITool @params
 ```
@@ -211,7 +211,7 @@ $params = @{
         "./docs/windows11-toast-sdk.md",
         "./docs/styleguide.md"
     )
-    Tool            = "ClaudeCode"
+    Tool            = "Claude"
 }
 Invoke-AITool @params
 ```
@@ -234,7 +234,7 @@ The [dbatools.io blog](https://dbatools.io) needed systematic updates to fix bro
 **The solution:**
 
 ```powershell
-Set-AIToolDefault -Tool ClaudeCode
+Set-AIToolDefault -Tool Claude
 Get-ChildItem *.md | Invoke-AITool -Prompt ./prompts/audit-blog.md
 ```
 
@@ -295,7 +295,7 @@ Invoke-AITool -Tool PSOPenAI -Prompt "A serene mountain landscape at sunset"
 
 ```powershell
 # Set default model
-Set-AIToolConfig -Tool ClaudeCode -Model claude-sonnet-4-5
+Set-AIToolConfig -Tool Claude -Model claude-sonnet-4-5
 
 # Update all installed tools
 Update-AITool

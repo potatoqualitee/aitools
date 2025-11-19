@@ -39,19 +39,19 @@ Describe 'AITools Module Integration Tests' {
     }
 
     Context 'Install-AITool' {
-        It 'Should have ClaudeCode installed' {
-            # Verify ClaudeCode is installed (required for tests)
+        It 'Should have Claude installed' {
+            # Verify Claude is installed (required for tests)
             $claude = Get-Command claude -ErrorAction SilentlyContinue
             $claude | Should -Not -BeNullOrEmpty
-            Write-Host "ClaudeCode installed at: $($claude.Source)"
+            Write-Host "Claude installed at: $($claude.Source)"
         }
 
         It 'Should return proper installation result object when already installed' {
             # Re-run install to check the output format (should detect already installed)
-            $result = Install-AITool -Name ClaudeCode -SkipInitialization
+            $result = Install-AITool -Name Claude -SkipInitialization
             $result | Should -Not -BeNullOrEmpty
             $result.PSObject.TypeNames | Should -Contain 'AITools.InstallResult'
-            $result.Tool | Should -Be 'ClaudeCode'
+            $result.Tool | Should -Be 'Claude'
             $result.Result | Should -Be 'Success'
             $result.Version | Should -Not -BeNullOrEmpty
             $result.Path | Should -Not -BeNullOrEmpty
@@ -60,34 +60,34 @@ Describe 'AITools Module Integration Tests' {
     }
 
     Context 'Set-AIToolDefault' {
-        It 'Should set ClaudeCode as default tool' {
-            $result = Set-AIToolDefault -Tool ClaudeCode
+        It 'Should set Claude as default tool' {
+            $result = Set-AIToolDefault -Tool Claude
             $result | Should -Not -BeNullOrEmpty
             $result.FullName | Should -Be 'AITools.DefaultTool'
-            $result.Value | Should -Be 'ClaudeCode'
+            $result.Value | Should -Be 'Claude'
         }
 
         It 'Should retrieve default tool configuration using Get-PSFConfigValue' {
             $defaultTool = Get-PSFConfigValue -FullName 'AITools.DefaultTool'
-            $defaultTool | Should -Be 'ClaudeCode'
+            $defaultTool | Should -Be 'Claude'
         }
     }
 
     Context 'Invoke-AITool Quick Chat' {
         It 'Should successfully run a quick chat with "Hello"' {
-            $result = Invoke-AITool -Prompt "Hello" -Tool ClaudeCode
+            $result = Invoke-AITool -Prompt "Hello" -Tool Claude
             $result | Should -Not -BeNullOrEmpty
-            $result.Tool | Should -Be 'ClaudeCode'
+            $result.Tool | Should -Be 'Claude'
             $result.Success | Should -Be $true
             $result.Result | Should -Not -BeNullOrEmpty
         }
 
         It 'Should return proper result object structure' {
-            $result = Invoke-AITool -Prompt "Say hi" -Tool ClaudeCode
+            $result = Invoke-AITool -Prompt "Say hi" -Tool Claude
             $result | Should -Not -BeNullOrEmpty
             $result.FileName | Should -Be 'N/A (Chat Mode)'
             $result.FullPath | Should -Be 'N/A (Chat Mode)'
-            $result.Tool | Should -Be 'ClaudeCode'
+            $result.Tool | Should -Be 'Claude'
             $result.Model | Should -Not -BeNullOrEmpty
             $result.StartTime | Should -Not -BeNullOrEmpty
             $result.EndTime | Should -Not -BeNullOrEmpty
@@ -96,7 +96,7 @@ Describe 'AITools Module Integration Tests' {
 
         It 'Should handle chat with CLAUDE_CODE_OAUTH_TOKEN environment variable' {
             $env:CLAUDE_CODE_OAUTH_TOKEN | Should -Not -BeNullOrEmpty
-            $result = Invoke-AITool -Prompt "Quick test" -Tool ClaudeCode
+            $result = Invoke-AITool -Prompt "Quick test" -Tool Claude
             $result.Success | Should -Be $true
         }
     }
@@ -115,15 +115,15 @@ function Get-TestData {
         }
 
         It 'Should process a file with a prompt' {
-            $result = Invoke-AITool -Path $script:tempFile -Prompt "Add comment-based help to this function" -Tool ClaudeCode
+            $result = Invoke-AITool -Path $script:tempFile -Prompt "Add comment-based help to this function" -Tool Claude
             $result | Should -Not -BeNullOrEmpty
             $result.FileName | Should -Be 'test-script.ps1'
             $result.FullPath | Should -Match 'test-script\.ps1$'
-            $result.Tool | Should -Be 'ClaudeCode'
+            $result.Tool | Should -Be 'Claude'
         }
 
         It 'Should return success status for file processing' {
-            $result = Invoke-AITool -Path $script:tempFile -Prompt "Add a return type hint" -Tool ClaudeCode
+            $result = Invoke-AITool -Path $script:tempFile -Prompt "Add a return type hint" -Tool Claude
             $result.Success | Should -Be $true
         }
     }
@@ -174,7 +174,7 @@ function Get-TestData {
     Context 'Get-AIToolConfig' {
         It 'Should retrieve tool configuration' {
             # Get-AIToolConfig returns PSFConfig objects
-            $config = Get-AIToolConfig -Tool ClaudeCode
+            $config = Get-AIToolConfig -Tool Claude
             # Config might be empty if no settings were applied, so just check it doesn't error
             # If there are configs, they should have FullName property
             if ($config) {

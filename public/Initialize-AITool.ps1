@@ -5,17 +5,17 @@ function Initialize-AITool {
 
     .DESCRIPTION
         Runs the initialization/authentication flow for AI tools. Different tools have different init processes:
-        - ClaudeCode: Launches interactive mode where you run '/login' for OAuth authentication (requires Claude subscription)
+        - Claude: Launches interactive mode where you run '/login' for OAuth authentication (requires Claude subscription)
         - Aider: Displays instructions for setting API keys via environment variables or .env files
         - Gemini: Launches interactive CLI which prompts for Google login (OAuth) or API key setup
-        - GitHubCopilot: Launches standalone CLI which prompts for browser authentication if needed (does NOT require gh CLI)
+        - Copilot: Launches standalone CLI which prompts for browser authentication if needed (does NOT require gh CLI)
         - Codex: Launches CLI which prompts for ChatGPT OAuth login or API key
 
     .PARAMETER Tool
-        The name of the AI tool to initialize. Valid values: ClaudeCode, Aider, Gemini, GitHubCopilot, Codex
+        The name of the AI tool to initialize. Valid values: Claude, Aider, Gemini, Copilot, Codex
 
     .EXAMPLE
-        Initialize-AITool -Tool ClaudeCode
+        Initialize-AITool -Tool Claude
         Launches Claude Code in interactive mode - type '/login' to authenticate.
 
     .EXAMPLE
@@ -38,7 +38,7 @@ function Initialize-AITool {
 
         # Handle "All" tool selection
         $toolsToInitialize = @()
-        if ($currentTool -eq 'All') {
+        if ($Tool -eq 'All') {
             Write-PSFMessage -Level Verbose -Message "Tool is 'All' - will initialize all installed tools"
             $toolsToInitialize = $script:ToolDefinitions.GetEnumerator() |
                 Where-Object { Test-Command -Command $_.Value.Command } |
@@ -46,7 +46,10 @@ function Initialize-AITool {
                 Select-Object -ExpandProperty Key
             Write-PSFMessage -Level Verbose -Message "Tools to initialize: $($toolsToInitialize -join ', ')"
         } else {
-            $toolsToInitialize = @($Tool)
+            # Resolve tool alias to canonical name
+            $resolvedTool = Resolve-ToolAlias -ToolName $Tool
+            Write-PSFMessage -Level Verbose -Message "Resolved tool name: $resolvedTool"
+            $toolsToInitialize = @($resolvedTool)
         }
     }
 
@@ -113,7 +116,7 @@ function Initialize-AITool {
 
         try {
             # Special handling for specific tools
-            if ($currentTool -eq 'GitHubCopilot') {
+            if ($currentTool -eq 'Copilot') {
                 # GitHub Copilot CLI is standalone - does NOT require gh CLI
                 Write-PSFMessage -Level Verbose -Message "Checking GitHub Copilot CLI availability..."
                 $copilotCheck = & copilot --version 2>&1
@@ -123,13 +126,13 @@ function Initialize-AITool {
                 }
 
                 Write-PSFMessage -Message "✓ GitHub Copilot CLI is installed!"
-                Show-ModuleMessage -MessageName 'githubcopilot-init-prompt'
+                Show-ModuleMessage -MessageName 'Copilot-init-prompt'
                 Read-Host
 
                 Invoke-Expression $toolDef.InitCommand
             }
-            elseif ($currentTool -eq 'ClaudeCode') {
-                Show-ModuleMessage -MessageName 'claudecode-init-prompt'
+            elseif ($currentTool -eq 'Claude') {
+                Show-ModuleMessage -MessageName 'Claude-init-prompt'
                 Read-Host
 
                 Invoke-Expression $toolDef.InitCommand

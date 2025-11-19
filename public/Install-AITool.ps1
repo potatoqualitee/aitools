@@ -8,7 +8,7 @@ function Install-AITool {
         with cross-platform support for Windows, Linux, and MacOS.
 
     .PARAMETER Name
-        The name of the AI tool to install. Valid values: ClaudeCode, Aider, Gemini, GitHubCopilot, Codex
+        The name of the AI tool to install. Valid values: Claude, Aider, Gemini, Copilot, Codex
 
     .PARAMETER SkipInitialization
         Skip the automatic initialization/login command after installation.
@@ -20,7 +20,7 @@ function Install-AITool {
         LocalMachine installs system-wide and requires sudo on Linux/MacOS or admin privileges on Windows.
 
     .EXAMPLE
-        Install-AITool -Name ClaudeCode
+        Install-AITool -Name Claude
         Installs Claude Code for the current user, runs initialization, and returns installation details.
 
     .EXAMPLE
@@ -66,7 +66,10 @@ function Install-AITool {
             $toolsToInstall = $script:ToolDefinitions.Keys | Sort-Object { $script:ToolDefinitions[$_].Priority }
             Write-PSFMessage -Level Verbose -Message "Tools to install: $($toolsToInstall -join ', ')"
         } else {
-            $toolsToInstall = @($Name)
+            # Resolve tool alias to canonical name
+            $resolvedName = Resolve-ToolAlias -ToolName $Name
+            Write-PSFMessage -Level Verbose -Message "Resolved tool name: $resolvedName"
+            $toolsToInstall = @($resolvedName)
         }
     }
 
@@ -145,8 +148,8 @@ function Install-AITool {
             $installCmd = @($installCmd)
         }
 
-        # For ClaudeCode on Windows with winget, check if winget is available and fallback to PowerShell installer if not
-        if ($currentToolName -eq 'ClaudeCode' -and $os -eq 'Windows' -and $installCmd[0] -match '^winget') {
+        # For Claude on Windows with winget, check if winget is available and fallback to PowerShell installer if not
+        if ($currentToolName -eq 'Claude' -and $os -eq 'Windows' -and $installCmd[0] -match '^winget') {
             Write-Progress -Activity "Installing $currentToolName" -Status "Checking for winget availability" -PercentComplete 18
             Write-PSFMessage -Level Verbose -Message "Checking if winget is available..."
             if (-not (Test-Command -Command 'winget')) {
@@ -708,15 +711,15 @@ function Install-AITool {
                     }
 
                     # pipx, Cursor Agent, and Claude Code install to ~/.local/bin
-                    if ($currentToolName -eq 'Cursor' -or $currentToolName -eq 'Aider' -or $currentToolName -eq 'ClaudeCode') {
+                    if ($currentToolName -eq 'Cursor' -or $currentToolName -eq 'Aider' -or $currentToolName -eq 'Claude') {
                         $localBin = "${env:HOME}/.local/bin"
                         if (-not ($env:PATH -like "*$localBin*")) {
                             $env:PATH = "${localBin}:${env:PATH}"
                             Write-PSFMessage -Level Verbose -Message "Added ~/.local/bin to PATH: $localBin"
                         }
 
-                        # Auto-configure persistent PATH for ClaudeCode, Aider, and Cursor
-                        if ($currentToolName -eq 'ClaudeCode' -or $currentToolName -eq 'Aider' -or $currentToolName -eq 'Cursor') {
+                        # Auto-configure persistent PATH for Claude, Aider, and Cursor
+                        if ($currentToolName -eq 'Claude' -or $currentToolName -eq 'Aider' -or $currentToolName -eq 'Cursor') {
                             Write-PSFMessage -Level Verbose -Message "Checking if ~/.local/bin is in persistent shell configuration..."
 
                             # Detect the shell and configure accordingly
