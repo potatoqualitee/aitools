@@ -16,7 +16,7 @@ aitools is a PowerShell module that lets you automate code refactoring, migratio
 
 ## What is aitools?
 
-aitools wraps *agentic CLI tools* (AI assistants that actually read, understand, and rewrite your code), making them scriptable and repeatable through PowerShell. Every run starts clean, with no conversation drift, just quality output.
+aitools wraps *agentic CLI tools* (AI assistants that actually read, understand, and rewrite your code), making them scriptable and repeatable through PowerShell. Every run starts clean, with no conversation drift, just consistent quality output.
 
 **In 30 seconds:**
 
@@ -24,7 +24,7 @@ aitools wraps *agentic CLI tools* (AI assistants that actually read, understand,
 # Install the module
 Install-Module aitools
 
-# Install Claude Code
+# Install Claude
 Install-AITool -Name Claude
 
 # Migrate all your Pester tests from v4 to v5
@@ -50,7 +50,7 @@ The problem with AI coding assistants isn't their capability, it's their interfa
 - Handling the boring parts (installation, updates, configuration)
 - Tracking what changed for review before committing
 
-**BUT ALSO**: Because aitools processes each file in a fresh, non-interactive session, the AI produces incredibly consistent, high-quality output without the context drift or degradation that happens in long interactive conversations.
+**BUT ALSO**: Because aitools processes each file in a fresh, non-interactive session, the AI produces incredibly consistent, high-quality output without the context drift or degradation that happens in long interactive conversations. Recent enhancements like parallel processing, automatic retry logic, and the ability to skip already-modified files make batch operations faster and more resilient.
 
 ---
 
@@ -103,7 +103,7 @@ Install-AITool -Name All
 Set-AIToolDefault -Tool Claude
 ```
 
-Now any aitools command will use Claude Code unless you specify otherwise.
+Now any aitools command will use Claude unless you specify otherwise.
 
 ---
 
@@ -139,22 +139,49 @@ Invoke-AITool -Path ./script.ps1 -Prompt "Optimize this" -Tool All
 
 Run the same task through all installed AI tools and compare results.
 
+### Choose the right tool for the job
+
+```powershell
+# Complex refactoring: Use Claude for deep understanding
+Get-ChildItem src\*.ps1 | Invoke-AITool -Tool Claude -Prompt ./prompts/refactor-dependency-injection.md
+
+# Large-scale refactoring: Use Gemini for massive context (entire codebase awareness)
+Get-ChildItem src\*.ps1 | Invoke-AITool -Tool Gemini -Prompt ./prompts/modernize-ps7.md
+
+# Quick metadata fixes: Use Copilot for speed
+Get-ChildItem recipes\*.md | Invoke-AITool -Tool Copilot -Prompt ./prompts/fix-recipe-metadata.md
+
+# T-SQL case sensitivity: Use Copilot for fast processing
+Get-ChildItem sql\*.sql | Invoke-AITool -Tool Copilot -Prompt "Convert all keywords to uppercase"
+
+# Blog updates: Use Copilot for rapid content corrections
+Get-ChildItem blog\*.md | Invoke-AITool -Tool Copilot -Prompt ./prompts/update-blog-links.md
+```
+
 ---
 
 ## Supported AI Tools
 
 | Tool | Best For | Pricing | Status |
 | --- | --- | --- | --- |
-| **Claude Code** | Complex refactoring, best overall coder | Subscription | ✅ Supported |
-| **Gemini CLI** | Large context windows, generous free tier | Free + paid | ✅ Supported |
+| **Claude** | Complex refactoring, architectural changes, sophisticated code transformations | Subscription | ✅ Supported |
+| **Gemini CLI** | Complex refactoring with massive context (1M tokens), multimodal understanding, generous free tier | Free + paid | ✅ Supported |
+| **Copilot** | Fast processing, quick tasks (blog updates, case fixes, metadata), GitHub workflow | Free + paid | ✅ Supported |
 | **Aider** | Reliable diffs, fast iteration | Free + paid | ✅ Supported |
-| **GitHub Copilot** | Integration with GitHub workflow | Free + paid | ✅ Supported |
-| **Codex CLI** | Fast processing | Subscription | ✅ Supported |
+| **Codex CLI** | Fast processing, vision support | Subscription | ✅ Supported |
 | **Cursor AI** | IDE integration | Free + paid | ✅ Supported |
 | **Ollama** | Offline use, completely free | Free | ✅ Supported |
 | **PSOpenAI** | Image/video/audio generation and editing | Pay-per-use | ✅ Supported |
 
-**Note:** PSOpenAI is a PowerShell module wrapper (not a CLI), providing capabilities that agentic tools don't yet support like image editing, video generation, and text-to-speech. Each tool has different strengths - Claude Code is the strongest coder but can struggle with files over 400 lines. Gemini has massive context windows. Ollama runs locally with no API costs. Use what fits your needs.
+**Choosing the right tool:**
+- **Claude** excels at complex refactoring and architectural changes where deep code understanding is critical, but can struggle with files over 400 lines
+- **Gemini 3** is exceptional for complex refactoring with its 1 million-token context window, allowing you to process entire large codebases in a single session. Strong at multimodal understanding (code, images, video, audio) and offers a generous free tier
+- **Copilot** shines for fast, focused tasks like blog updates, T-SQL case sensitivity conversion, fixing metadata, or quick content corrections
+- **Ollama** runs completely offline with no API costs
+
+**Note:** PSOpenAI is a PowerShell module wrapper (not a CLI), providing capabilities that agentic tools don't yet support like image editing, video generation, and text-to-speech.
+
+**Tool Name Change:** As of v1.0.5, `ClaudeCode` has been renamed to `Claude` and `GitHubCopilot` to `Copilot` for simplicity. The old names still work as aliases for backward compatibility.
 
 ---
 
@@ -238,7 +265,7 @@ Set-AIToolDefault -Tool Claude
 Get-ChildItem *.md | Invoke-AITool -Prompt ./prompts/audit-blog.md
 ```
 
-Using a 300-line prompt that encoded all the nuance, Claude Code processed hundreds of posts, making judgment calls throughout:
+Using a 300-line prompt that encoded all the nuance, Claude processed hundreds of posts, making judgment calls throughout:
 
 - Tested and replaced dead links
 - Converted Twitter embeds to paraphrased statements
@@ -254,18 +281,22 @@ This demonstrates what agentic CLIs do well: read complex requirements, maintain
 
 ### Working with Images
 
-**Image Analysis and Code Generation (Codex)**
+**Image Analysis and Code Generation (Codex, Claude, Gemini)**
+
+Vision-capable tools can analyze images and generate code based on visual input:
 
 ```powershell
-$params = @{
-    Tool       = 'Codex'
-    Prompt     = 'Create a Hugo website using colors from this design'
-    Attachment = '.\design.png'
-}
-Invoke-AITool @params
+# Using the -Attachment parameter
+Invoke-AITool -Tool Codex -Attachment design.png -Prompt "Create a Hugo website using colors from this design"
+
+# Piping image files directly (Codex treats them as attachments)
+Get-ChildItem screenshot.png | Invoke-AITool -Tool Codex -Prompt "What UI framework was used?"
+
+# Other tools treat piped images as regular files for analysis
+Get-ChildItem diagram.png | Invoke-AITool -Tool Claude -Prompt "Describe this architecture"
 ```
 
-The `-Attachment` parameter works with image files and is supported by Codex for vision-based code generation.
+The `-Attachment` parameter works with common image formats (PNG, JPG, GIF, etc.). Codex automatically treats piped image files as attachments, while other vision-capable tools analyze them as regular files.
 
 **Image Editing and Generation (PSOpenAI)**
 
@@ -291,25 +322,107 @@ Invoke-AITool -Tool PSOPenAI -Prompt "A serene mountain landscape at sunset"
 
 **Authentication:** PSOpenAI requires an OpenAI API key. Set `$env:OPENAI_API_KEY` or run `Initialize-AITool -Tool PSOPenAI` for configuration instructions.
 
+### Extended Thinking / Reasoning
+
+Enable deeper reasoning for supported models (Claude, Aider, Codex, Cursor):
+
+```powershell
+# Claude: triggers extended thinking tokens
+Invoke-AITool -Path complex.ps1 -Tool Claude -ReasoningEffort high
+
+# Codex: uses OpenAI's o1/o3 reasoning models
+Invoke-AITool -Path complex.ps1 -Tool Codex -ReasoningEffort medium
+
+# Aider: enables reasoning-capable models
+Invoke-AITool -Path complex.ps1 -Tool Aider -ReasoningEffort low
+```
+
+Reasoning effort levels: `low`, `medium`, `high`. Best for complex refactoring or architectural changes.
+
 ### Custom Configuration
 
 ```powershell
 # Set default model
 Set-AIToolConfig -Tool Claude -Model claude-sonnet-4-5
 
+# Set default reasoning effort
+Set-AIToolConfig -Tool Claude -ReasoningEffort medium
+
 # Update all installed tools
 Update-AITool
 ```
 
+### Parallel Processing
+
+By default, when processing 4 or more files, Invoke-AITool runs them in parallel with up to 3 concurrent threads:
+
+```powershell
+# Processes files in parallel (default for 4+ files)
+Get-ChildItem src\*.ps1 | Invoke-AITool -Prompt "Add error handling"
+
+# Force sequential processing
+Get-ChildItem src\*.ps1 | Invoke-AITool -Prompt "Add error handling" -NoParallel
+
+# Increase concurrency (may trigger API rate limits)
+Get-ChildItem src\*.ps1 | Invoke-AITool -Prompt "Add error handling" -MaxThreads 5
+```
+
+Results stream as they complete, providing real-time feedback.
+
+### Automatic Retry with Exponential Backoff
+
+Transient errors (timeouts, rate limits, server errors) are automatically retried with delays of 2, 4, 8, 16, 32, 64 minutes until the cumulative delay exceeds 4 hours:
+
+```powershell
+# Default: automatic retry enabled
+Get-ChildItem src\*.ps1 | Invoke-AITool -Prompt "Refactor code"
+
+# Disable retry - fail immediately on error
+Get-ChildItem src\*.ps1 | Invoke-AITool -Prompt "Refactor code" -DisableRetry
+
+# Customize max retry time (1 hour instead of 4)
+Get-ChildItem src\*.ps1 | Invoke-AITool -Prompt "Refactor code" -MaxRetryMinutes 60
+```
+
+### Skip Modified Files
+
+Resume interrupted batch operations by skipping files that have already been changed:
+
+```powershell
+# Skip files with uncommitted, staged, or unpushed changes
+Get-ChildItem src\*.ps1 | Invoke-AITool -Prompt "Add error handling" -SkipModified
+
+# When on main branch, check last 10 commits for modified files
+Get-ChildItem src\*.ps1 | Invoke-AITool -Prompt "Add error handling" -SkipModified -CommitDepth 10
+```
+
+Useful for resuming after hitting rate limits or fixing errors mid-batch.
+
 ### Processing Subsets
 
 ```powershell
-# Skip the first 30 files, process the next 20
-Get-ChildItem tests\*.Tests.ps1 |
-  Update-PesterTest -First 20 -Skip 30 -Verbose
+# Process only the first 5 files
+Get-ChildItem tests\*.Tests.ps1 | Invoke-AITool -Prompt "Fix bugs" -First 5
+
+# Skip the first 2 files, process the next 3
+Get-ChildItem tests\*.Tests.ps1 | Invoke-AITool -Prompt "Fix bugs" -Skip 2 -First 3
+
+# Process only the last 3 files
+Get-ChildItem tests\*.Tests.ps1 | Invoke-AITool -Prompt "Fix bugs" -Last 3
 ```
 
-Useful for debugging prompts or resuming interrupted batches.
+Useful for debugging prompts or testing on a subset before full batch processing.
+
+### Rate Limiting
+
+Add delays between file processing to spread API calls over time:
+
+```powershell
+# Wait 10 seconds between each file
+Get-ChildItem src\*.ps1 | Invoke-AITool -Prompt "Add docs" -DelaySeconds 10
+```
+
+Helps manage credit usage or avoid aggressive API throttling.
 
 ---
 
