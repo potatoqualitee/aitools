@@ -38,8 +38,8 @@ function Update-PesterTest {
 
     .PARAMETER Tool
         The AI coding tool to use.
-        Valid values: ClaudeCode, Aider, Gemini, GitHubCopilot, Codex
-        Default: ClaudeCode
+        Valid values: Claude, Aider, Gemini, Copilot, Codex
+        Default: Claude
 
     .PARAMETER Raw
         Run the command directly without capturing output or assigning to variables.

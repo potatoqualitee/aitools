@@ -9,14 +9,14 @@ function Get-AITool {
 
     .PARAMETER Tool
         The specific AI tool to check. If not specified, shows information for all tools.
-        Valid values: All, ClaudeCode, Aider, Gemini, GitHubCopilot, Codex, Cursor, Ollama
+        Valid values: All, Claude, Aider, Gemini, Copilot, Codex, Cursor, Ollama
 
     .EXAMPLE
         Get-AITool
         Shows information for all AI tools
 
     .EXAMPLE
-        Get-AITool -Tool ClaudeCode
+        Get-AITool -Tool Claude
         Shows information only for Claude Code
 
     .EXAMPLE
@@ -43,7 +43,10 @@ function Get-AITool {
             $toolsToCheck = $script:ToolDefinitions.Keys | Sort-Object { $script:ToolDefinitions[$_].Priority }
         } else {
             Write-PSFMessage -Level Verbose -Message "Checking specific tool: $Tool"
-            $toolsToCheck = @($Tool)
+            # Resolve tool alias to canonical name
+            $resolvedTool = Resolve-ToolAlias -ToolName $Tool
+            Write-PSFMessage -Level Verbose -Message "Resolved tool name: $resolvedTool"
+            $toolsToCheck = @($resolvedTool)
         }
     }
 

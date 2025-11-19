@@ -91,7 +91,7 @@ Start-Process explorer -ArgumentList C:\github\dbatools\tests
 ################################################################################
 
 # Set Claude Code just in case
-Set-AIToolDefault -Tool ClaudeCode
+Set-AIToolDefault -Tool Claude
 
 # Clear all changes in the dbatools repo
 Clear-Modified
@@ -151,7 +151,7 @@ Get-ChildItem C:\github\dbatools\tests\*.Tests.ps1 |
 ################################################################################
 
 # Requires subscription
-Set-AIToolDefault -Tool GitHubCopilot
+Set-AIToolDefault -Tool Copilot
 
 ################################################################################
 #

@@ -47,7 +47,7 @@ jobs:
           Write-Host "OS: $($PSVersionTable.OS)"
           Write-Host "Platform: $($PSVersionTable.Platform)"
 
-      - name: Setup Node.js (required for ClaudeCode on Linux/macOS)
+      - name: Setup Node.js (required for Claude on Linux/macOS)
         if: runner.os != 'Windows'
         uses: actions/setup-node@v4
         with:
@@ -74,7 +74,7 @@ jobs:
           Import-Module ./aitools.psd1 -Force
           if ($IsWindows -or $env:OS -match 'Windows') {
             Write-Host "Installing AI tools on Windows (skipping Aider and Gemini due to long install times)..."
-            $tools = @('ClaudeCode', 'Codex', 'GitHubCopilot')
+            $tools = @('Claude', 'Codex', 'Copilot')
             foreach ($tool in $tools) {
               Write-Host "Installing $tool..."
               Install-AITool -Name $tool -SkipInitialization -Verbose
@@ -94,14 +94,14 @@ jobs:
           Install-AITool -Name Aider -SkipInitialization -Verbose
           Install-AITool -Name Gemini -SkipInitialization -Verbose
 
-      - name: Verify at least ClaudeCode is installed
+      - name: Verify at least Claude is installed
         shell: pwsh
         run: |
           Import-Module ./aitools.psd1 -Force
           $claude = Get-Command claude -ErrorAction SilentlyContinue
           if (-not $claude) {
-            Write-Host "ClaudeCode not found, installing individually..."
-            Install-AITool -Name ClaudeCode -SkipInitialization -Verbose
+            Write-Host "Claude not found, installing individually..."
+            Install-AITool -Name Claude -SkipInitialization -Verbose
 
             # Refresh path after installation for current session
             if ($IsWindows -or $env:OS -match 'Windows') {
@@ -131,25 +131,25 @@ jobs:
             # Check again after path refresh
             $claude = Get-Command claude -ErrorAction SilentlyContinue
             if (-not $claude) {
-              Write-Warning "ClaudeCode still not found after installation. Checking npm global path..."
+              Write-Warning "Claude still not found after installation. Checking npm global path..."
               npm list -g --depth=0
             }
           } else {
-            Write-Host "ClaudeCode is installed"
+            Write-Host "Claude is installed"
             & claude --version
           }
 
-      - name: Set ClaudeCode as default
+      - name: Set Claude as default
         shell: pwsh
         run: |
           Import-Module ./aitools.psd1 -Force
           # Verify claude is available before setting as default (to avoid Read-Host prompt)
           $claude = Get-Command claude -ErrorAction SilentlyContinue
           if ($claude) {
-            Write-Host "Setting ClaudeCode as default tool..."
-            Set-AIToolDefault -Tool ClaudeCode
+            Write-Host "Setting Claude as default tool..."
+            Set-AIToolDefault -Tool Claude
           } else {
-            Write-Error "ClaudeCode is not installed, cannot set as default"
+            Write-Error "Claude is not installed, cannot set as default"
             exit 1
           }
 
@@ -172,7 +172,7 @@ jobs:
         run: |
           Import-Module ./aitools.psd1 -Force
           Write-Host "Testing Invoke-AITool with quick chat..."
-          $result = Invoke-AITool -Prompt "Hello" -Tool ClaudeCode
+          $result = Invoke-AITool -Prompt "Hello" -Tool Claude
           Write-Host "Chat result:"
           $result | Format-List
 

@@ -4,7 +4,7 @@ function Find-AvailableAITool {
         Finds the first available AI tool based on priority order.
 
     .DESCRIPTION
-        Checks for installed AI tools in order of priority (ClaudeCode, Codex, Gemini, GitHubCopilot, Aider)
+        Checks for installed AI tools in order of priority (Claude, Codex, Gemini, Copilot, Aider)
         and returns the first one found.
 
     .OUTPUTS

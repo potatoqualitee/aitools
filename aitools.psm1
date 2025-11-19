@@ -44,17 +44,33 @@ foreach ($function in $publicFunctions) {
 }
 
 
+# Tool name aliases for convenience (maps user-friendly names to canonical names)
+$script:ToolAliases = @{
+    # Claude aliases
+    'Code'          = 'Claude'
+    'ClaudeCode'    = 'Claude'
+
+    # Gemini aliases
+    'GoogleGemini'  = 'Gemini'
+
+    # Codex aliases
+    'OpenAICodex'   = 'Codex'
+
+    # Copilot aliases
+    'GitHubCopilot' = 'Copilot'
+}
+
 # Tool definitions with CLI command mappings
 $script:ToolDefinitions = @{
-    'ClaudeCode'       = @{
+    'Claude'       = @{
         Command           = 'claude'
         InstallCommands   = @{
-            Windows = 'winget install --id=Anthropic.ClaudeCode -e --accept-source-agreements --accept-package-agreements'
+            Windows = 'winget install --id=Anthropic.Claude -e --accept-source-agreements --accept-package-agreements'
             Linux   = 'curl -fsSL https://claude.ai/install.sh | bash'
             MacOS   = 'curl -fsSL https://claude.ai/install.sh | bash'
         }
         UninstallCommands = @{
-            Windows = 'winget uninstall --id=Anthropic.ClaudeCode -e --accept-source-agreements --accept-package-agreements'
+            Windows = 'winget uninstall --id=Anthropic.Claude -e --accept-source-agreements --accept-package-agreements'
             Linux   = 'claude uninstall'
             MacOS   = 'claude uninstall'
         }
@@ -116,7 +132,7 @@ $script:ToolDefinitions = @{
         Debug             = '--debug'
         Priority          = 3
     }
-    'GitHubCopilot' = @{
+    'Copilot' = @{
         Command           = 'copilot'
         InstallCommands   = @{
             Windows = 'npm install -g @github/copilot'
@@ -231,10 +247,10 @@ $script:ToolDefinitions = @{
     }
 }
 
-# Define TEPP scriptblock
+# Define TEPP scriptblock (use shorter alias names for autocomplete)
 $teppScriptBlockParams = @{
     Name        = 'Tool'
-    ScriptBlock = { 'All', 'Aider', 'Gemini', 'ClaudeCode', 'Codex', 'GitHubCopilot', 'Cursor', 'Ollama', 'PSOPenAI' }
+    ScriptBlock = { 'All', 'Code', 'Copilot', 'Gemini', 'Codex', 'Aider', 'Cursor', 'Ollama', 'PSOPenAI' }
 }
 Register-PSFTeppScriptblock @teppScriptBlockParams
 
@@ -269,18 +285,20 @@ Register-PSFTeppScriptblock -Name PromptName -ScriptBlock {
 Register-PSFTeppArgumentCompleter -Command Get-AITPrompt -Parameter Name -Name PromptName
 
 $exportedFunctions = @(
-    'Install-AITool',
+    'Clear-AIToolConfig',
+    'Get-AITool',
+    'Get-AIToolConfig',
+    'Get-AITPrompt',
     'Initialize-AITool',
+    'Install-AITool',
     'Invoke-AITool',
+    'Select-UnmodifiedFile',
     'Set-AIToolConfig',
     'Set-AIToolDefault',
-    'Clear-AIToolConfig',
-    'Get-AIToolConfig',
-    'Get-AITool',
-    'Get-AITPrompt',
+    'Test-GitFileModified',
+    'Uninstall-AITool',
     'Update-AITool',
-    'Update-PesterTest',
-    'Uninstall-AITool'
+    'Update-PesterTest'
 )
 
 Export-ModuleMember -Function $exportedFunctions

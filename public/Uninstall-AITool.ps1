@@ -8,13 +8,13 @@ function Uninstall-AITool {
         with cross-platform support for Windows, Linux, and MacOS.
 
     .PARAMETER Name
-        The name of the AI tool to uninstall. Valid values: ClaudeCode, Aider, Gemini, GitHubCopilot, Codex
+        The name of the AI tool to uninstall. Valid values: Claude, Aider, Gemini, Copilot, Codex
 
     .PARAMETER Force
         Force uninstallation without confirmation prompts.
 
     .EXAMPLE
-        Uninstall-AITool -Name ClaudeCode
+        Uninstall-AITool -Name Claude
         Uninstalls Claude Code after confirmation.
 
     .EXAMPLE
@@ -37,37 +37,41 @@ function Uninstall-AITool {
 
     begin {
         Write-PSFMessage -Level Verbose -Message "Starting uninstallation of $Name"
+
+        # Resolve tool alias to canonical name
+        $resolvedName = Resolve-ToolAlias -ToolName $Name
+        Write-PSFMessage -Level Verbose -Message "Resolved tool name: $resolvedName"
     }
 
     process {
-        Write-Progress -Activity "Uninstalling $Name" -Status "Preparing" -PercentComplete 5
-        Write-PSFMessage -Level Verbose -Message "Retrieving tool definition for $Name"
-        $tool = $script:ToolDefinitions[$Name]
+        Write-Progress -Activity "Uninstalling $resolvedName" -Status "Preparing" -PercentComplete 5
+        Write-PSFMessage -Level Verbose -Message "Retrieving tool definition for $resolvedName"
+        $tool = $script:ToolDefinitions[$resolvedName]
         $os = Get-OperatingSystem
 
         if (-not $tool) {
-            Write-Progress -Activity "Uninstalling $Name" -Completed
-            Stop-PSFFunction -Message "Unknown tool: $Name" -EnableException $true
+            Write-Progress -Activity "Uninstalling $resolvedName" -Completed
+            Stop-PSFFunction -Message "Unknown tool: $resolvedName" -EnableException $true
             return
         }
 
-        Write-Progress -Activity "Uninstalling $Name" -Status "Checking installation" -PercentComplete 10
-        Write-PSFMessage -Level Verbose -Message "Checking if $Name is installed"
+        Write-Progress -Activity "Uninstalling $resolvedName" -Status "Checking installation" -PercentComplete 10
+        Write-PSFMessage -Level Verbose -Message "Checking if $resolvedName is installed"
 
         if (-not (Test-Command -Command $tool.Command)) {
-            Write-Progress -Activity "Uninstalling $Name" -Completed
-            Write-PSFMessage -Level Warning -Message "$Name is not currently installed."
+            Write-Progress -Activity "Uninstalling $resolvedName" -Completed
+            Write-PSFMessage -Level Warning -Message "$resolvedName is not currently installed."
 
             [PSCustomObject]@{
                 PSTypeName  = 'AITools.UninstallResult'
-                Tool        = $Name
+                Tool        = $resolvedName
                 Result      = 'Failed'
                 Uninstaller = 'N/A'
             }
             return
         }
 
-        Write-Progress -Activity "Uninstalling $Name" -Status "Detecting installation method" -PercentComplete 15
+        Write-Progress -Activity "Uninstalling $resolvedName" -Status "Detecting installation method" -PercentComplete 15
 
         # Detect installation method by checking where the command is located
         $commandInfo = Get-Command $tool.Command -ErrorAction SilentlyContinue
@@ -100,8 +104,8 @@ function Uninstall-AITool {
             return
         }
 
-        # For ClaudeCode on Windows with winget, check if winget is available and fallback to native uninstaller if not
-        if ($Name -eq 'ClaudeCode' -and $os -eq 'Windows' -and $uninstallCmd -match '^winget') {
+        # For Claude on Windows with winget, check if winget is available and fallback to native uninstaller if not
+        if ($Name -eq 'Claude' -and $os -eq 'Windows' -and $uninstallCmd -match '^winget') {
             Write-Progress -Activity "Uninstalling $Name" -Status "Checking for winget availability" -PercentComplete 20
             Write-PSFMessage -Level Verbose -Message "Checking if winget is available..."
             if (-not (Test-Command -Command 'winget')) {

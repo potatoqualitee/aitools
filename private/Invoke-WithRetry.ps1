@@ -31,7 +31,7 @@ function Invoke-WithRetry {
         Switch to enable retry logic. If not specified, executes once without retry.
 
     .PARAMETER Context
-        Descriptive context for logging (e.g., "Processing file.ps1 with ClaudeCode").
+        Descriptive context for logging (e.g., "Processing file.ps1 with Claude").
 
     .EXAMPLE
         Invoke-WithRetry -ScriptBlock { & claude --version } -EnableRetry -Context "Testing Claude"

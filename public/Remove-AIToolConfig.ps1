@@ -31,15 +31,15 @@ function Remove-AIToolConfig {
         Removes the EditMode configuration for Aider.
 
     .EXAMPLE
-        Remove-AIToolConfig -Tool ClaudeCode -Model
-        Removes the Model configuration for ClaudeCode.
+        Remove-AIToolConfig -Tool Claude -Model
+        Removes the Model configuration for Claude.
 
     .EXAMPLE
         Get-AIToolConfig -Tool Aider | Remove-AIToolConfig -EditMode
         Uses pipeline to remove EditMode configuration from Aider.
 
     .EXAMPLE
-        'Aider', 'ClaudeCode' | Remove-AIToolConfig -PermissionBypass
+        'Aider', 'Claude' | Remove-AIToolConfig -PermissionBypass
         Removes PermissionBypass configuration from multiple tools via pipeline.
 
     .EXAMPLE
