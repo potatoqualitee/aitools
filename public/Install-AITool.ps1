@@ -700,10 +700,48 @@ function Install-AITool {
                 # Refresh PATH to pick up newly installed tools in the current session
                 Write-PSFMessage -Level Verbose -Message "Refreshing PATH environment variable"
                 if ($os -eq 'Windows') {
+                    # For winget installations, explicitly check the WinGet Packages directory first
+                    # This works around timing issues where the User PATH registry hasn't propagated yet
+                    if ($installCmd[0] -match '^winget install') {
+                        Write-PSFMessage -Level Verbose -Message "Winget installation detected - checking WinGet Packages directory"
+
+                        # Find the specific package directory that winget just created
+                        $wingetPackagesPath = "$env:LOCALAPPDATA\Microsoft\WinGet\Packages"
+                        if (Test-Path $wingetPackagesPath) {
+                            # Look for the package directory (e.g., Anthropic.ClaudeCode_*)
+                            $packageDirs = Get-ChildItem -Path $wingetPackagesPath -Directory -Filter "*$currentToolName*" -ErrorAction SilentlyContinue
+                            if (-not $packageDirs) {
+                                # Try alternate package name patterns
+                                $alternateNames = @{
+                                    'Claude' = 'Anthropic.ClaudeCode*'
+                                }
+                                if ($alternateNames.ContainsKey($currentToolName)) {
+                                    $packageDirs = Get-ChildItem -Path $wingetPackagesPath -Directory -Filter $alternateNames[$currentToolName] -ErrorAction SilentlyContinue
+                                }
+                            }
+
+                            foreach ($packageDir in $packageDirs) {
+                                $packagePath = $packageDir.FullName
+                                Write-PSFMessage -Level Verbose -Message "Found winget package directory: $packagePath"
+
+                                # Check if the command executable exists in this directory
+                                $exePath = Join-Path $packagePath "$($tool.Command).exe"
+                                if (Test-Path $exePath) {
+                                    if (-not ($env:Path -like "*$packagePath*")) {
+                                        $env:Path = "$packagePath;$env:Path"
+                                        Write-PSFMessage -Level Verbose -Message "Added winget package path to current session PATH: $packagePath"
+                                    }
+                                    break
+                                }
+                            }
+                        }
+                    }
+
+                    # Now refresh from registry (this may not have propagated yet, but try anyway)
                     $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
                     Write-PSFMessage -Level Verbose -Message "Windows PATH refreshed from Machine and User scopes"
 
-                    # For Claude on Windows, explicitly add known installation paths if command not found
+                    # For Claude on Windows, also check traditional installation paths as fallback
                     if ($currentToolName -eq 'Claude') {
                         $claudePaths = @(
                             "$env:LOCALAPPDATA\Programs\Claude\resources\app\bin",
