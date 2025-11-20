@@ -748,6 +748,7 @@ function Invoke-AITool {
                         $originalOutputEncoding = [Console]::OutputEncoding
                         [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
                         $env:PYTHONIOENCODING = 'utf-8'
+                        $env:LITELLM_NUM_RETRIES = '0'
 
                         & $toolDef.Command @arguments 2>&1 | ForEach-Object {
                             if ($_ -is [System.Management.Automation.ErrorRecord]) {
@@ -812,6 +813,7 @@ function Invoke-AITool {
                     $originalOutputEncoding = [Console]::OutputEncoding
                     [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
                     $env:PYTHONIOENCODING = 'utf-8'
+                    $env:LITELLM_NUM_RETRIES = '0'
 
                     # Wrap tool execution with retry logic
                     $executionScriptBlock = {
@@ -1419,6 +1421,7 @@ function Invoke-AITool {
                         $originalOutputEncoding = [Console]::OutputEncoding
                         [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
                         $env:PYTHONIOENCODING = 'utf-8'
+                        $env:LITELLM_NUM_RETRIES = '0'
 
                         & $toolDef.Command @arguments 2>&1 | ForEach-Object {
                             if ($_ -is [System.Management.Automation.ErrorRecord]) {
@@ -1484,6 +1487,7 @@ function Invoke-AITool {
                     $originalOutputEncoding = [Console]::OutputEncoding
                     [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
                     $env:PYTHONIOENCODING = 'utf-8'
+                    $env:LITELLM_NUM_RETRIES = '0'
 
                     # Wrap tool execution with retry logic
                     $executionScriptBlock = {
