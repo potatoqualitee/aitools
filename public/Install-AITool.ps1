@@ -702,6 +702,22 @@ function Install-AITool {
                 if ($os -eq 'Windows') {
                     $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
                     Write-PSFMessage -Level Verbose -Message "Windows PATH refreshed from Machine and User scopes"
+
+                    # For Claude on Windows, explicitly add known installation paths if command not found
+                    if ($currentToolName -eq 'Claude') {
+                        $claudePaths = @(
+                            "$env:LOCALAPPDATA\Programs\Claude\resources\app\bin",
+                            "$env:LOCALAPPDATA\Programs\Claude\resources\bin",
+                            "$env:LOCALAPPDATA\Programs\Claude"
+                        )
+                        foreach ($claudePath in $claudePaths) {
+                            if ((Test-Path $claudePath) -and (-not ($env:Path -like "*$claudePath*"))) {
+                                $env:Path = "$claudePath;$env:Path"
+                                Write-PSFMessage -Level Verbose -Message "Added Claude installation path to PATH: $claudePath"
+                                break
+                            }
+                        }
+                    }
                 } else {
                     # On Unix, npm global installs go to different locations
                     $npmBin = npm config get prefix 2>$null

@@ -118,6 +118,21 @@ jobs:
             # This is necessary because each step starts a new shell session
             if ($IsWindows -or $env:OS -match 'Windows') {
               $newPath = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
+
+              # For Claude on Windows, explicitly add known installation paths
+              $claudePaths = @(
+                "$env:LOCALAPPDATA\Programs\Claude\resources\app\bin",
+                "$env:LOCALAPPDATA\Programs\Claude\resources\bin",
+                "$env:LOCALAPPDATA\Programs\Claude"
+              )
+              foreach ($claudePath in $claudePaths) {
+                if ((Test-Path $claudePath) -and (-not ($newPath -like "*$claudePath*"))) {
+                  $newPath = "$claudePath;$newPath"
+                  Write-Host "Added Claude installation path: $claudePath"
+                  break
+                }
+              }
+
               "PATH=$newPath" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
               Write-Host "Updated GITHUB_PATH for subsequent steps"
             } else {
