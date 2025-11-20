@@ -826,6 +826,7 @@ function Invoke-AITool {
                     }.GetNewClosure()
 
                     $capturedOutput = Invoke-WithRetry -ScriptBlock $executionScriptBlock -EnableRetry:(-not $DisableRetry) -MaxTotalMinutes $MaxRetryMinutes -Context "Aider chat mode"
+                    $toolExitCode = $LASTEXITCODE
 
                     # capturedOutput is already populated from Invoke-WithRetry
                     Remove-Item -Path $tempOutputFile -Force -ErrorAction SilentlyContinue
@@ -844,7 +845,7 @@ function Invoke-AITool {
                         StartTime    = $startTime
                         EndTime      = $endTime = Get-Date
                         Duration     = [timespan]::FromSeconds([Math]::Floor(($endTime - $startTime).TotalSeconds))
-                        Success      = ($LASTEXITCODE -eq 0)
+                        Success      = ($toolExitCode -eq 0)
                     }
 
                     Write-PSFMessage -Level Verbose -Message "Tool exited with code: $LASTEXITCODE"
@@ -865,6 +866,7 @@ function Invoke-AITool {
 "@)
 
                     Invoke-WithRetry -ScriptBlock $executionScriptBlock -EnableRetry:(-not $DisableRetry) -MaxTotalMinutes $MaxRetryMinutes -Context "Codex chat mode"
+                    $toolExitCode = $LASTEXITCODE
 
                     # Read output from temp file
                     $capturedOutput = Get-Content -Path $tempOutputFile -Raw -Encoding utf8
@@ -891,7 +893,7 @@ function Invoke-AITool {
                         StartTime    = $startTime
                         EndTime      = $endTime = Get-Date
                         Duration     = [timespan]::FromSeconds([Math]::Floor(($endTime - $startTime).TotalSeconds))
-                        Success      = ($LASTEXITCODE -eq 0)
+                        Success      = ($toolExitCode -eq 0)
                     }
 
                     Write-PSFMessage -Level Verbose -Message "Tool exited with code: $LASTEXITCODE"
@@ -911,6 +913,7 @@ function Invoke-AITool {
                     }.GetNewClosure()
 
                     Invoke-WithRetry -ScriptBlock $executionScriptBlock -EnableRetry:(-not $DisableRetry) -MaxTotalMinutes $MaxRetryMinutes -Context "Cursor chat mode"
+                    $toolExitCode = $LASTEXITCODE
 
                     # Read output from temp file
                     $capturedOutput = Get-Content -Path $tempOutputFile -Raw -Encoding utf8
@@ -925,7 +928,7 @@ function Invoke-AITool {
                         StartTime    = $startTime
                         EndTime      = $endTime = Get-Date
                         Duration     = [timespan]::FromSeconds([Math]::Floor(($endTime - $startTime).TotalSeconds))
-                        Success      = ($LASTEXITCODE -eq 0)
+                        Success      = ($toolExitCode -eq 0)
                     }
 
                     Write-PSFMessage -Level Verbose -Message "Tool exited with code: $LASTEXITCODE"
@@ -943,6 +946,7 @@ function Invoke-AITool {
                     }.GetNewClosure()
 
                     Invoke-WithRetry -ScriptBlock $executionScriptBlock -EnableRetry:(-not $DisableRetry) -MaxTotalMinutes $MaxRetryMinutes -Context "$currentTool chat mode"
+                    $toolExitCode = $LASTEXITCODE
 
                     # Read output from temp file
                     $capturedOutput = Get-Content -Path $tempOutputFile -Raw -Encoding utf8
@@ -962,7 +966,7 @@ function Invoke-AITool {
                         StartTime    = $startTime
                         EndTime      = $endTime = Get-Date
                         Duration     = [timespan]::FromSeconds([Math]::Floor(($endTime - $startTime).TotalSeconds))
-                        Success      = ($LASTEXITCODE -eq 0)
+                        Success      = ($toolExitCode -eq 0)
                     }
 
                     Write-PSFMessage -Level Verbose -Message "Tool exited with code: $LASTEXITCODE"
@@ -1049,6 +1053,10 @@ function Invoke-AITool {
                     $MaxRetryMinutes,
                     $SkipModified
                 )
+
+                # Set environment variables for LiteLLM (used by Aider) in this runspace
+                # Disable LiteLLM's internal retry mechanism since we handle retries ourselves
+                $env:LITELLM_NUM_RETRIES = '0'
 
                 # Import the module from the provided path
                 Import-Module $ModulePath -ErrorAction Stop
@@ -1509,6 +1517,7 @@ function Invoke-AITool {
                     }.GetNewClosure()
 
                     $capturedOutput = Invoke-WithRetry -ScriptBlock $executionScriptBlock -EnableRetry:(-not $DisableRetry) -MaxTotalMinutes $MaxRetryMinutes -Context "Aider processing $singleFile"
+                    $toolExitCode = $LASTEXITCODE
 
                     # capturedOutput is already populated from Invoke-WithRetry
                     Remove-Item -Path $tempOutputFile -Force -ErrorAction SilentlyContinue
@@ -1527,7 +1536,7 @@ function Invoke-AITool {
                         StartTime    = $startTime
                         EndTime      = $endTime = Get-Date
                         Duration     = [timespan]::FromSeconds([Math]::Floor(($endTime - $startTime).TotalSeconds))
-                        Success      = ($LASTEXITCODE -eq 0)
+                        Success      = ($toolExitCode -eq 0)
                     }
 
                     Write-PSFMessage -Level Verbose -Message "Tool exited with code: $LASTEXITCODE"
@@ -1549,6 +1558,7 @@ function Invoke-AITool {
 "@)
 
                     Invoke-WithRetry -ScriptBlock $executionScriptBlock -EnableRetry:(-not $DisableRetry) -MaxTotalMinutes $MaxRetryMinutes -Context "Codex processing $singleFile"
+                    $toolExitCode = $LASTEXITCODE
 
                     # Read output from temp file
                     $capturedOutput = Get-Content -Path $tempOutputFile -Raw -Encoding utf8
@@ -1563,7 +1573,7 @@ function Invoke-AITool {
                         StartTime    = $startTime
                         EndTime      = $endTime = Get-Date
                         Duration     = [timespan]::FromSeconds([Math]::Floor(($endTime - $startTime).TotalSeconds))
-                        Success      = ($LASTEXITCODE -eq 0)
+                        Success      = ($toolExitCode -eq 0)
                     }
 
                     Write-PSFMessage -Level Verbose -Message "Tool exited with code: $LASTEXITCODE"
@@ -1581,6 +1591,7 @@ function Invoke-AITool {
                     }.GetNewClosure()
 
                     Invoke-WithRetry -ScriptBlock $executionScriptBlock -EnableRetry:(-not $DisableRetry) -MaxTotalMinutes $MaxRetryMinutes -Context "Cursor processing $singleFile"
+                    $toolExitCode = $LASTEXITCODE
 
                     # Read output from temp file
                     $capturedOutput = Get-Content -Path $tempOutputFile -Raw -Encoding utf8
@@ -1595,7 +1606,7 @@ function Invoke-AITool {
                         StartTime    = $startTime
                         EndTime      = $endTime = Get-Date
                         Duration     = [timespan]::FromSeconds([Math]::Floor(($endTime - $startTime).TotalSeconds))
-                        Success      = ($LASTEXITCODE -eq 0)
+                        Success      = ($toolExitCode -eq 0)
                     }
 
                     Write-PSFMessage -Level Verbose -Message "Tool exited with code: $LASTEXITCODE"
@@ -1613,6 +1624,7 @@ function Invoke-AITool {
                     }.GetNewClosure()
 
                     Invoke-WithRetry -ScriptBlock $executionScriptBlock -EnableRetry:(-not $DisableRetry) -MaxTotalMinutes $MaxRetryMinutes -Context "$currentTool processing $singleFile"
+                    $toolExitCode = $LASTEXITCODE
 
                     # Read output from temp file
                     $capturedOutput = Get-Content -Path $tempOutputFile -Raw -Encoding utf8
@@ -1632,7 +1644,7 @@ function Invoke-AITool {
                         StartTime    = $startTime
                         EndTime      = $endTime = Get-Date
                         Duration     = [timespan]::FromSeconds([Math]::Floor(($endTime - $startTime).TotalSeconds))
-                        Success      = ($LASTEXITCODE -eq 0)
+                        Success      = ($toolExitCode -eq 0)
                     }
 
                     Write-PSFMessage -Level Verbose -Message "Tool exited with code: $LASTEXITCODE"

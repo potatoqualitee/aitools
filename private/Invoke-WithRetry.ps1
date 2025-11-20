@@ -74,6 +74,17 @@ function Invoke-WithRetry {
         $result = & $ScriptBlock
         $exitCode = $LASTEXITCODE
 
+        # Check if the output contains errors even if exit code is 0 (some tools incorrectly return 0 on error)
+        if ($exitCode -eq 0 -and $result) {
+            $resultText = $result | Out-String
+            # Check for critical error patterns that indicate failure despite exit code 0
+            if ($resultText -match '(?i)(litellm\.APIError|APIError|CRITICAL ERROR|FATAL|argument of type.*NoneType.*not iterable)') {
+                Write-PSFMessage -Level Warning -Message "[$Context] Exit code was 0 but output contains error indicators - treating as failure"
+                $exitCode = 1
+                $global:LASTEXITCODE = 1
+            }
+        }
+
         # Check if successful (exit code 0)
         if ($exitCode -eq 0) {
             if ($attemptNumber -gt 1) {
@@ -148,6 +159,8 @@ function Invoke-WithRetry {
                 Write-PSFMessage -Level Debug -Message "[$Context] Failed attempt output:`n$resultText"
             }
 
+            # Preserve the exit code for the caller
+            $global:LASTEXITCODE = $exitCode
             return $result
         }
 
@@ -160,6 +173,8 @@ function Invoke-WithRetry {
             $totalElapsed = [Math]::Round(((Get-Date) - $startTime).TotalMinutes, 2)
             Write-PSFMessage -Level Error -Message "[$Context] Retry EXHAUSTED after $attemptNumber attempts and $cumulativeDelayMinutes minutes of delays (total elapsed: $totalElapsed minutes). Next retry delay of $nextDelayMinutes minutes would exceed maximum of $MaxTotalMinutes minutes."
 
+            # Preserve the exit code for the caller
+            $global:LASTEXITCODE = $exitCode
             # Return the last result (failure) rather than throwing, to maintain compatibility
             return $result
         }
