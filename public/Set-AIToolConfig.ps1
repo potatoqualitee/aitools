@@ -22,6 +22,10 @@ function Set-AIToolConfig {
     .PARAMETER ReasoningEffort
         The reasoning effort level for the model (Codex, Aider, Claude only). Valid values: low, medium, high
 
+    .PARAMETER AiderOutputDir
+        Directory for Aider output files (Aider only). Defaults to a temp directory that gets cleaned up.
+        Set this to a custom path if you want to preserve Aider's history and metadata files.
+
     .EXAMPLE
         Set-AIToolConfig -Tool Aider -EditMode Diff
 
@@ -33,6 +37,9 @@ function Set-AIToolConfig {
 
     .EXAMPLE
         Set-AIToolConfig -Tool Codex -ReasoningEffort high
+
+    .EXAMPLE
+        Set-AIToolConfig -Tool Aider -AiderOutputDir "C:\MyAiderHistory"
 
     .EXAMPLE
         Set-AIToolConfig -Tool All -PermissionBypass
@@ -47,7 +54,8 @@ function Set-AIToolConfig {
         [switch]$PermissionBypass,
         [string]$Model,
         [ValidateSet('low', 'medium', 'high')]
-        [string]$ReasoningEffort
+        [string]$ReasoningEffort,
+        [string]$AiderOutputDir
     )
 
     # Handle "All" tool selection
@@ -93,6 +101,22 @@ function Set-AIToolConfig {
             Write-PSFMessage -Level Verbose -Message "ReasoningEffort parameter provided: $ReasoningEffort"
             Set-PSFConfig -FullName "AITools.$currentTool.ReasoningEffort" -Value $ReasoningEffort -PassThru | Register-PSFConfig
             Write-PSFMessage -Level Verbose -Message "Set $currentTool reasoning effort to: $ReasoningEffort"
+        }
+
+        if ($AiderOutputDir) {
+            Write-PSFMessage -Level Verbose -Message "AiderOutputDir parameter provided: $AiderOutputDir"
+            if ($currentTool -ne 'Aider') {
+                Write-PSFMessage -Level Warning -Message "AiderOutputDir is only applicable to Aider, skipping for $currentTool"
+            } else {
+                # Expand path and create directory if it doesn't exist
+                $expandedPath = [System.IO.Path]::GetFullPath($AiderOutputDir)
+                if (-not (Test-Path $expandedPath)) {
+                    Write-PSFMessage -Level Verbose -Message "Creating output directory: $expandedPath"
+                    New-Item -Path $expandedPath -ItemType Directory -Force | Out-Null
+                }
+                Set-PSFConfig -FullName "AITools.$currentTool.OutputDir" -Value $expandedPath -PassThru | Register-PSFConfig
+                Write-PSFMessage -Level Verbose -Message "Set $currentTool output directory to: $expandedPath"
+            }
         }
 
         Write-PSFMessage -Level Verbose -Message "Configuration saved to PSFramework for $currentTool"

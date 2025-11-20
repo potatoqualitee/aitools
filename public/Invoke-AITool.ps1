@@ -480,7 +480,7 @@ function Invoke-AITool {
 
         # Handle "All" tool selection - get all available tools
         $toolsToRun = @()
-        if ($currentTool -eq 'All') {
+        if ($Tool -eq 'All') {
             Write-PSFMessage -Level Verbose -Message "Tool is 'All' - will run all available tools"
             # Get all tool names sorted by priority
             $toolsToRun = $script:ToolDefinitions.GetEnumerator() |
@@ -581,7 +581,7 @@ function Invoke-AITool {
             # Log filtering results
             Write-PSFMessage -Level Verbose -Message "File filtering applied: $originalCount → $($filesToProcess.Count) file(s) (Skip:$Skip First:$First Last:$Last)"
             if ($filesToProcess.Count -ne $originalCount) {
-                Write-Information "Filtered to $($filesToProcess.Count) of $originalCount file(s) based on -Skip/-First/-Last parameters" -InformationAction Continue
+                Write-PSFMessage -Level Verbose -Message "Filtered to $($filesToProcess.Count) of $originalCount file(s) based on -Skip/-First/-Last parameters"
             }
         }
 
@@ -1064,7 +1064,7 @@ function Invoke-AITool {
             # Create and start runspaces for each file
             foreach ($singleFile in $filesToProcess) {
                 $fileIndex++
-                Write-PSFMessage -Level Verbose -Message "Queuing file $fileIndex of $totalFiles for parallel processing: $singleFile"
+                Write-PSFMessage -Level Debug -Message "Queuing file $fileIndex of $totalFiles for parallel processing: $singleFile"
                 $progressParams = @{
                     Activity        = "Starting parallel processing with $currentTool"
                     Status          = "Queuing files ($fileIndex/$totalFiles)"

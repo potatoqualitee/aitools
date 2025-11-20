@@ -343,9 +343,24 @@ Set-AIToolConfig -Tool Claude -Model claude-sonnet-4-5
 # Set default reasoning effort
 Set-AIToolConfig -Tool Claude -ReasoningEffort medium
 
+# Configure Aider output directory (defaults to temp directory)
+Set-AIToolConfig -Tool Aider -AiderOutputDir "C:\MyAiderHistory"
+
 # Update all installed tools
 Update-AITool
 ```
+
+**Aider Output Configuration**
+
+By default, Aider generates history and metadata files (`.aider.input.history`, `.aider.chat.history.md`, `.aider.model.settings.yml`, `.aider.model.metadata.json`, `.aiderignore`, `.env`) in your current directory. aitools redirects these to a temporary directory that gets cleaned up automatically.
+
+To preserve Aider's history and metadata files, configure a custom output directory:
+
+```powershell
+Set-AIToolConfig -Tool Aider -AiderOutputDir "C:\AiderHistory"
+```
+
+This keeps all Aider output files in one location instead of cluttering your working directories.
 
 ### Parallel Processing
 

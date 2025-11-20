@@ -43,10 +43,51 @@ function New-AiderArgument {
         }
     }
 
-    Write-PSFMessage -Level Debug -Message "Adding no-auto-commits, cache-prompts, and no-pretty flags"
+    Write-PSFMessage -Level Debug -Message "Adding optimization flags: no-auto-commits, cache-prompts, no-pretty, no-show-model-warnings, no-browser, subtree-only, no-repo-map, skip-sanity-check-repo"
     $arguments += '--no-auto-commits'
     $arguments += '--cache-prompts'
     $arguments += '--no-pretty'
+    $arguments += '--no-show-model-warnings'
+    $arguments += '--no-browser'
+    $arguments += '--subtree-only'
+    $arguments += '--map-tokens', '0'  # Disable repo map (0 tokens)
+    $arguments += '--skip-sanity-check-repo'
+
+    # Configure output directory for Aider history and metadata files
+    $outputDir = Get-PSFConfigValue -FullName "AITools.Aider.OutputDir" -Fallback $null
+    if (-not $outputDir) {
+        # Default to a temp directory if not configured
+        $outputDir = Join-Path ([System.IO.Path]::GetTempPath()) "aitools-aider-output"
+        if (-not (Test-Path $outputDir)) {
+            Write-PSFMessage -Level Debug -Message "Creating default Aider output directory: $outputDir"
+            New-Item -Path $outputDir -ItemType Directory -Force | Out-Null
+        }
+    }
+    Write-PSFMessage -Level Debug -Message "Using Aider output directory: $outputDir"
+
+    # Set input history file
+    $inputHistoryFile = Join-Path $outputDir ".aider.input.history"
+    $arguments += '--input-history-file', $inputHistoryFile
+
+    # Set chat history file
+    $chatHistoryFile = Join-Path $outputDir ".aider.chat.history.md"
+    $arguments += '--chat-history-file', $chatHistoryFile
+
+    # Set model settings file
+    $modelSettingsFile = Join-Path $outputDir ".aider.model.settings.yml"
+    $arguments += '--model-settings-file', $modelSettingsFile
+
+    # Set model metadata file
+    $modelMetadataFile = Join-Path $outputDir ".aider.model.metadata.json"
+    $arguments += '--model-metadata-file', $modelMetadataFile
+
+    # Set aiderignore file
+    $aiderignoreFile = Join-Path $outputDir ".aiderignore"
+    $arguments += '--aiderignore', $aiderignoreFile
+
+    # Set env file
+    $envFile = Join-Path $outputDir ".env"
+    $arguments += '--env-file', $envFile
 
     if ($TargetFile) {
         Write-PSFMessage -Level Debug -Message "Target file: $TargetFile"
