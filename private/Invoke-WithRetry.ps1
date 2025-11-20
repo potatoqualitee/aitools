@@ -13,7 +13,12 @@ function Invoke-WithRetry {
         - Quota/usage limits
         - Service overload/capacity issues
 
-        Non-retryable errors (e.g., invalid arguments, file not found, permission denied) fail immediately.
+        Non-retryable errors fail immediately without retry:
+        - Configuration errors (NoneType, invalid configuration, missing configuration)
+        - Authentication/credentials errors (unauthorized, invalid API key)
+        - Invalid parameters/arguments (bad request, validation errors)
+        - File/path not found errors
+        - Permission denied
 
         Retries with delays of 2, 4, 8, 16, 32, 64 minutes until the cumulative delay would exceed
         the maximum total time (default 240 minutes / 4 hours).
@@ -87,8 +92,26 @@ function Invoke-WithRetry {
         if ($result) {
             $resultText = $result | Out-String
 
+            # First check for NON-retryable errors (configuration, authentication, invalid parameters)
+            # These should fail fast without retry
+            if ($resultText -match '(?i)(argument of type|NoneType|not iterable|invalid configuration|missing configuration)') {
+                $isRetryable = $false
+                $errorReason = "configuration error (argument/NoneType)"
+            }
+            elseif ($resultText -match '(?i)(authentication failed|unauthorized|invalid credentials|invalid api key|api key)') {
+                $isRetryable = $false
+                $errorReason = "authentication/credentials error"
+            }
+            elseif ($resultText -match '(?i)(invalid parameter|invalid argument|bad request|validation error)') {
+                $isRetryable = $false
+                $errorReason = "invalid parameter/argument"
+            }
+            elseif ($resultText -match '(?i)(file not found|path not found|directory not found)') {
+                $isRetryable = $false
+                $errorReason = "file/path not found"
+            }
             # Check for common retryable error patterns
-            if ($resultText -match '(?i)(timeout|timed out|time out)') {
+            elseif ($resultText -match '(?i)(timeout|timed out|time out)') {
                 $isRetryable = $true
                 $errorReason = "timeout"
             }
