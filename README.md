@@ -145,14 +145,14 @@ Get-ChildItem blog\*.md | Invoke-AITool -Tool Copilot -Prompt ./prompts/update-b
 
 | Tool | Best For | Pricing | Status |
 | --- | --- | --- | --- |
-| **Claude** | Complex refactoring, architectural changes, sophisticated code transformations | Subscription | ✅ Supported |
-| **Gemini CLI** | Complex refactoring with massive context (1M tokens), multimodal understanding, generous free tier | Free + paid | ✅ Supported |
-| **Copilot** | Fast processing, quick tasks (blog updates, case fixes, metadata), GitHub workflow | Free + paid | ✅ Supported |
+| **Claude** | Complex refactoring, architectural changes | Subscription | ✅ Supported |
+| **Gemini CLI** | Massive context (1M tokens), multimodal | Free + paid | ✅ Supported |
+| **Copilot** | Fast tasks, blog updates, GitHub workflow | Free + paid | ✅ Supported |
 | **Aider** | Reliable diffs, fast iteration | Free + paid | ✅ Supported |
 | **Codex CLI** | Fast processing, vision support | Subscription | ✅ Supported |
 | **Cursor AI** | IDE integration | Free + paid | ✅ Supported |
 | **Ollama** | Offline use, completely free | Free | ✅ Supported |
-| **PSOpenAI** | Image/video/audio generation and editing | Pay-per-use | ✅ Supported |
+| **PSOpenAI** | Image/video/audio generation | Pay-per-use | ✅ Supported |
 
 ## Which one to use
 
