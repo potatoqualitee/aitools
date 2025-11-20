@@ -707,16 +707,26 @@ function Install-AITool {
 
                         # Find the specific package directory that winget just created
                         $wingetPackagesPath = "$env:LOCALAPPDATA\Microsoft\WinGet\Packages"
+                        Write-PSFMessage -Level Verbose -Message "Checking for winget packages at: $wingetPackagesPath"
+
                         if (Test-Path $wingetPackagesPath) {
+                            Write-PSFMessage -Level Verbose -Message "WinGet Packages directory exists"
+
                             # Look for the package directory (e.g., Anthropic.ClaudeCode_*)
+                            Write-PSFMessage -Level Verbose -Message "Searching for package directories matching: *$currentToolName*"
                             $packageDirs = Get-ChildItem -Path $wingetPackagesPath -Directory -Filter "*$currentToolName*" -ErrorAction SilentlyContinue
+                            Write-PSFMessage -Level Verbose -Message "Found $($packageDirs.Count) package directories with initial filter"
+
                             if (-not $packageDirs) {
                                 # Try alternate package name patterns
                                 $alternateNames = @{
                                     'Claude' = 'Anthropic.ClaudeCode*'
                                 }
                                 if ($alternateNames.ContainsKey($currentToolName)) {
-                                    $packageDirs = Get-ChildItem -Path $wingetPackagesPath -Directory -Filter $alternateNames[$currentToolName] -ErrorAction SilentlyContinue
+                                    $alternateFilter = $alternateNames[$currentToolName]
+                                    Write-PSFMessage -Level Verbose -Message "Trying alternate filter: $alternateFilter"
+                                    $packageDirs = Get-ChildItem -Path $wingetPackagesPath -Directory -Filter $alternateFilter -ErrorAction SilentlyContinue
+                                    Write-PSFMessage -Level Verbose -Message "Found $($packageDirs.Count) package directories with alternate filter"
                                 }
                             }
 
@@ -726,14 +736,22 @@ function Install-AITool {
 
                                 # Check if the command executable exists in this directory
                                 $exePath = Join-Path $packagePath "$($tool.Command).exe"
+                                Write-PSFMessage -Level Verbose -Message "Checking for executable at: $exePath"
                                 if (Test-Path $exePath) {
+                                    Write-PSFMessage -Level Verbose -Message "Executable found!"
                                     if (-not ($env:Path -like "*$packagePath*")) {
                                         $env:Path = "$packagePath;$env:Path"
                                         Write-PSFMessage -Level Verbose -Message "Added winget package path to current session PATH: $packagePath"
+                                    } else {
+                                        Write-PSFMessage -Level Verbose -Message "Package path already in PATH"
                                     }
                                     break
+                                } else {
+                                    Write-PSFMessage -Level Verbose -Message "Executable not found at expected path"
                                 }
                             }
+                        } else {
+                            Write-PSFMessage -Level Verbose -Message "WinGet Packages directory does not exist at: $wingetPackagesPath"
                         }
                     }
 

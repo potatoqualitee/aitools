@@ -65,12 +65,12 @@ $script:ToolDefinitions = @{
     'Claude'       = @{
         Command           = 'claude'
         InstallCommands   = @{
-            Windows = 'winget install --id=Anthropic.Claude -e --accept-source-agreements --accept-package-agreements'
+            Windows = 'winget install --id=Anthropic.ClaudeCode -e --accept-source-agreements --accept-package-agreements'
             Linux   = 'curl -fsSL https://claude.ai/install.sh | bash'
             MacOS   = 'curl -fsSL https://claude.ai/install.sh | bash'
         }
         UninstallCommands = @{
-            Windows = 'winget uninstall --id=Anthropic.Claude -e --accept-source-agreements --accept-package-agreements'
+            Windows = 'winget uninstall --id=Anthropic.ClaudeCode -e --accept-source-agreements --accept-package-agreements'
             Linux   = 'claude uninstall'
             MacOS   = 'claude uninstall'
         }
