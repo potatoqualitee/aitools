@@ -142,6 +142,12 @@ function Invoke-WithRetry {
             $totalElapsed = [Math]::Round(((Get-Date) - $startTime).TotalMinutes, 2)
             Write-PSFMessage -Level Error -Message "[$Context] Attempt $attemptNumber FAILED with exit code $exitCode (non-retryable error). Total elapsed: $totalElapsed minutes"
             Write-PSFMessage -Level Verbose -Message "[$Context] Error is not retryable (not a timeout, rate limit, server error, or connection issue). Failing immediately."
+
+            # Send failed attempt output to debug log
+            if ($result) {
+                Write-PSFMessage -Level Debug -Message "[$Context] Failed attempt output:`n$resultText"
+            }
+
             return $result
         }
 
@@ -162,6 +168,11 @@ function Invoke-WithRetry {
         $totalElapsed = [Math]::Round(((Get-Date) - $startTime).TotalMinutes, 2)
         Write-PSFMessage -Level Warning -Message "[$Context] Attempt $attemptNumber FAILED with exit code $exitCode (retryable: $errorReason)"
         Write-PSFMessage -Level Important -Message "[$Context] Will retry in $nextDelayMinutes minutes (cumulative delay: $projectedTotal minutes, total elapsed: $totalElapsed minutes)"
+
+        # Send failed attempt output to debug log
+        if ($result) {
+            Write-PSFMessage -Level Debug -Message "[$Context] Failed attempt $attemptNumber output:`n$resultText"
+        }
 
         # Wait for the delay period
         $delaySeconds = $nextDelayMinutes * 60
