@@ -817,14 +817,23 @@ function Invoke-AITool {
 
                     # Wrap tool execution with retry logic
                     $executionScriptBlock = {
-                        & $toolDef.Command @arguments *>&1 | Out-File -FilePath $tempOutputFile -Encoding utf8
+                        $outFileParams = @{
+                            FilePath = $tempOutputFile
+                            Encoding = 'utf8'
+                        }
+                        # Use Tee-Object to both write to file AND return output for error checking
+                        & $toolDef.Command @arguments *>&1 | Tee-Object @outFileParams
                     }.GetNewClosure()
 
-                    Invoke-WithRetry -ScriptBlock $executionScriptBlock -EnableRetry:(-not $DisableRetry) -MaxTotalMinutes $MaxRetryMinutes -Context "Aider chat mode"
+                    $capturedOutput = Invoke-WithRetry -ScriptBlock $executionScriptBlock -EnableRetry:(-not $DisableRetry) -MaxTotalMinutes $MaxRetryMinutes -Context "Aider chat mode"
 
-                    # Read output from temp file
-                    $capturedOutput = Get-Content -Path $tempOutputFile -Raw -Encoding utf8
+                    # capturedOutput is already populated from Invoke-WithRetry
                     Remove-Item -Path $tempOutputFile -Force -ErrorAction SilentlyContinue
+
+                    # Convert output to string if needed
+                    if ($capturedOutput -is [array]) {
+                        $capturedOutput = $capturedOutput | Out-String
+                    }
 
                     [PSCustomObject]@{
                         FileName     = 'N/A (Chat Mode)'
@@ -1491,14 +1500,23 @@ function Invoke-AITool {
 
                     # Wrap tool execution with retry logic
                     $executionScriptBlock = {
-                        & $toolDef.Command @arguments *>&1 | Out-File -FilePath $tempOutputFile -Encoding utf8
+                        $outFileParams = @{
+                            FilePath = $tempOutputFile
+                            Encoding = 'utf8'
+                        }
+                        # Use Tee-Object to both write to file AND return output for error checking
+                        & $toolDef.Command @arguments *>&1 | Tee-Object @outFileParams
                     }.GetNewClosure()
 
-                    Invoke-WithRetry -ScriptBlock $executionScriptBlock -EnableRetry:(-not $DisableRetry) -MaxTotalMinutes $MaxRetryMinutes -Context "Aider processing $singleFile"
+                    $capturedOutput = Invoke-WithRetry -ScriptBlock $executionScriptBlock -EnableRetry:(-not $DisableRetry) -MaxTotalMinutes $MaxRetryMinutes -Context "Aider processing $singleFile"
 
-                    # Read output from temp file
-                    $capturedOutput = Get-Content -Path $tempOutputFile -Raw -Encoding utf8
+                    # capturedOutput is already populated from Invoke-WithRetry
                     Remove-Item -Path $tempOutputFile -Force -ErrorAction SilentlyContinue
+
+                    # Convert output to string if needed
+                    if ($capturedOutput -is [array]) {
+                        $capturedOutput = $capturedOutput | Out-String
+                    }
 
                     [PSCustomObject]@{
                         FileName     = [System.IO.Path]::GetFileName($singleFile)
