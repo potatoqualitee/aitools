@@ -73,14 +73,15 @@ function Invoke-AITool {
         recently modified in the main branch history. Only used when on main/master/trunk branches.
 
     .PARAMETER NoParallel
-        Disables parallel processing and processes files sequentially. By default, when processing
-        4 or more files, they are processed in parallel with up to 3 concurrent threads. Use this
-        switch to force sequential processing regardless of file count.
+        Disables parallel processing and processes files/batches sequentially. By default, when processing
+        4 or more files (or batches when using -BatchSize), they are processed in parallel with up to 3
+        concurrent threads. Use this switch to force sequential processing regardless of file/batch count.
 
     .PARAMETER MaxThreads
         Maximum number of concurrent threads for parallel processing. Default is 3 to avoid API
         rate limiting. Can be increased for better performance, but higher values may trigger
         API throttling depending on your service provider's quotas and limits.
+        When used with -BatchSize, this controls how many batches run concurrently (not individual files).
 
     .PARAMETER Skip
         Skips the specified number of files from the beginning of the pipeline input.
@@ -99,6 +100,11 @@ function Invoke-AITool {
         When set to a value greater than 1, multiple files are combined into a single prompt to reduce
         token usage and API calls. Useful for batch translation, formatting, or other similar operations.
         Note: The AI's response must include clear file separators or filenames to distinguish outputs.
+        Batches can be processed in parallel when there are 4+ batches - use -MaxThreads to control
+        concurrency (e.g., 12 files with -BatchSize 3 creates 4 batches that can run 3 at a time).
+
+        Recommendation: A BatchSize of 3 has shown good results for most workloads. If you experience
+        inconsistencies or quality issues in AI responses when trying for higher numbers like 5 or 10, reduce this to see what works best for your workload.
 
     .EXAMPLE
         Get-ChildItem *.Tests.ps1 | Invoke-AITool -Prompt "Refactor from Pester v4 to v5"
@@ -202,6 +208,11 @@ function Invoke-AITool {
     .EXAMPLE
         Get-ChildItem *.md | Invoke-AITool -Context "glossary.md" -Prompt "prompt.md" -BatchSize 3
         Processes 3 markdown files at a time in a single AI request to reduce token usage.
+
+    .EXAMPLE
+        Get-ChildItem *.ps1 | Invoke-AITool -Prompt "Add error handling" -BatchSize 3 -MaxThreads 3
+        With 12+ files: Creates batches of 3 files each, then processes 3 batches concurrently.
+        This combines token savings (batching) with speed (parallelism).
     #>
     [CmdletBinding()]
     param(
@@ -1022,17 +1033,31 @@ function Invoke-AITool {
             Write-Warning "Using $MaxThreads threads may cause API rate limiting. Consider reducing -MaxThreads if you encounter throttling errors."
         }
 
-        # PARALLEL PROCESSING: Default behavior for 4+ files (unless -NoParallel is specified or BatchSize > 1)
-        # Sequential processing for 1-3 files, when -NoParallel is used, or when using batch mode
+        # PARALLEL PROCESSING: Default behavior for 4+ files/batches (unless -NoParallel is specified)
+        # Sequential processing for 1-3 files/batches, or when -NoParallel is used
         # (Many AI CLI tools have rate limits and don't handle high concurrency well)
-        # BatchSize > 1 requires sequential processing to combine files into single API requests
+        # When BatchSize > 1, parallelization happens at the batch level (not individual files)
+        # This combines token savings (batched files) with speed (parallel batches)
         $pool = $null
         $runspaces = @()
-        $shouldUseParallel = (-not $NoParallel) -and ($BatchSize -eq 1) -and ($filesToProcess.Count -ge 4)
+
+        # Group files into batches based on BatchSize parameter
+        $batches = @()
+        for ($i = 0; $i -lt $filesToProcess.Count; $i += $BatchSize) {
+            $batchEnd = [Math]::Min($i + $BatchSize, $filesToProcess.Count)
+            $batches += ,@($filesToProcess[$i..($batchEnd - 1)])
+        }
+
+        # Determine if parallel processing should be used (based on batch count, not file count)
+        $shouldUseParallel = (-not $NoParallel) -and ($batches.Count -ge 4)
 
         try {
             if ($shouldUseParallel) {
-                Write-PSFMessage -Level Verbose -Message "Parallel mode enabled for $($filesToProcess.Count) files - creating runspace pool with max $MaxThreads threads"
+                if ($BatchSize -gt 1) {
+                    Write-PSFMessage -Level Verbose -Message "Parallel batch mode enabled: $($filesToProcess.Count) files in $($batches.Count) batches - creating runspace pool with max $MaxThreads threads"
+                } else {
+                    Write-PSFMessage -Level Verbose -Message "Parallel mode enabled for $($filesToProcess.Count) files - creating runspace pool with max $MaxThreads threads"
+                }
                 $pool = [RunspaceFactory]::CreateRunspacePool(1, $MaxThreads)
                 $pool.ApartmentState = "MTA"
                 $pool.Open()
@@ -1040,7 +1065,7 @@ function Invoke-AITool {
                 if ($NoParallel) {
                     Write-PSFMessage -Level Verbose -Message "Sequential processing enforced by -NoParallel switch"
                 } elseif ($BatchSize -gt 1) {
-                    Write-PSFMessage -Level Verbose -Message "Sequential processing enforced by -BatchSize $BatchSize (batch mode requires sequential processing)"
+                    Write-PSFMessage -Level Verbose -Message "Sequential batch processing: $($filesToProcess.Count) files in $($batches.Count) batch(es) of up to $BatchSize file(s) each (parallel processing used for 4+ batches)"
                 } else {
                     Write-PSFMessage -Level Verbose -Message "Sequential processing (only $($filesToProcess.Count) file(s), parallel is used for 4+ files)"
                 }
@@ -1049,9 +1074,13 @@ function Invoke-AITool {
             $fileIndex = 0
             $totalFiles = $filesToProcess.Count
 
-            # If parallel mode is enabled and we have multiple files, use runspaces
+            # If parallel mode is enabled and we have multiple batches, use runspaces
             if ($shouldUseParallel -and $pool) {
-            Write-PSFMessage -Level Verbose -Message "Processing $totalFiles files in parallel (max $MaxThreads concurrent)"
+            if ($BatchSize -gt 1) {
+                Write-PSFMessage -Level Verbose -Message "Processing $totalFiles files in $($batches.Count) batches in parallel (max $MaxThreads concurrent batches)"
+            } else {
+                Write-PSFMessage -Level Verbose -Message "Processing $totalFiles files in parallel (max $MaxThreads concurrent)"
+            }
 
             # Track start time for parallel execution timing
             $parallelStartTime = Get-Date
@@ -1060,11 +1089,11 @@ function Invoke-AITool {
             # Get the module path for loading in runspaces
             $modulePsmPath = Join-Path $script:ModuleRoot "aitools.psm1"
 
-            # Create scriptblock for parallel execution - just call Invoke-AITool recursively
+            # Create scriptblock for parallel execution - just call Invoke-AITool recursively with batch
             $scriptblock = {
                 param(
                     $ModulePath,
-                    $Path,
+                    $BatchFiles,
                     $Prompt,
                     $Tool,
                     $Context,
@@ -1072,7 +1101,8 @@ function Invoke-AITool {
                     $ReasoningEffort,
                     $DisableRetry,
                     $MaxRetryMinutes,
-                    $SkipModified
+                    $SkipModified,
+                    $BatchSize
                 )
 
                 # Set environment variables for LiteLLM (used by Aider) in this runspace
@@ -1084,10 +1114,11 @@ function Invoke-AITool {
 
                 # Build parameters for recursive call
                 $params = @{
-                    Path = $Path
+                    Path = $BatchFiles
                     Prompt = $Prompt
                     Tool = $Tool
                     NoParallel = $true  # Force sequential processing in worker threads
+                    BatchSize = $BatchSize  # Preserve batch size for proper batching in worker thread
                 }
 
                 if ($Context) { $params['Context'] = $Context }
@@ -1101,21 +1132,23 @@ function Invoke-AITool {
                 Invoke-AITool @params
             }
 
-            # Create and start runspaces for each file
-            foreach ($singleFile in $filesToProcess) {
-                $fileIndex++
-                Write-PSFMessage -Level Debug -Message "Queuing file $fileIndex of $totalFiles for parallel processing: $singleFile"
+            # Create and start runspaces for each batch
+            $batchIndex = 0
+            foreach ($batch in $batches) {
+                $batchIndex++
+                $batchFileNames = ($batch | ForEach-Object { [System.IO.Path]::GetFileName($_) }) -join ', '
+                Write-PSFMessage -Level Debug -Message "Queuing batch $batchIndex of $($batches.Count) for parallel processing: $batchFileNames"
                 $progressParams = @{
                     Activity        = "Starting parallel processing with $currentTool"
-                    Status          = "Queuing files ($fileIndex/$totalFiles)"
-                    PercentComplete = ($fileIndex / $totalFiles) * 100
+                    Status          = "Queuing batch $batchIndex/$($batches.Count) ($($batch.Count) file(s))"
+                    PercentComplete = ($batchIndex / $batches.Count) * 100
                 }
                 Write-Progress @progressParams
 
                 $runspace = [PowerShell]::Create()
                 $null = $runspace.AddScript($scriptblock)
                 $null = $runspace.AddArgument($modulePsmPath)        # ModulePath
-                $null = $runspace.AddArgument($singleFile)           # Path
+                $null = $runspace.AddArgument($batch)                # BatchFiles (array)
                 $null = $runspace.AddArgument($promptText)           # Prompt
                 $null = $runspace.AddArgument($currentTool)          # Tool
                 $null = $runspace.AddArgument($contextFiles)         # Context
@@ -1124,13 +1157,14 @@ function Invoke-AITool {
                 $null = $runspace.AddArgument($DisableRetry)         # DisableRetry
                 $null = $runspace.AddArgument($MaxRetryMinutes)      # MaxRetryMinutes
                 $null = $runspace.AddArgument($SkipModified)         # SkipModified
+                $null = $runspace.AddArgument($BatchSize)            # BatchSize
                 $runspace.RunspacePool = $pool
 
                 $runspaces += [PSCustomObject]@{
                     Pipe = $runspace
                     Status = $runspace.BeginInvoke()
-                    File = $singleFile
-                    Index = $fileIndex
+                    Batch = $batch
+                    Index = $batchIndex
                 }
             }
 
@@ -1140,45 +1174,81 @@ function Invoke-AITool {
             Write-Progress -Activity "Starting parallel processing with $currentTool" -Completed
 
             # Update progress to show we're now processing (not queuing)
-            Write-Progress -Activity "Processing files in parallel with $currentTool" -Status "Waiting for results..." -PercentComplete 0
+            $processingActivity = if ($BatchSize -gt 1) { "Processing batches in parallel with $currentTool" } else { "Processing files in parallel with $currentTool" }
+            Write-Progress -Activity $processingActivity -Status "Waiting for results..." -PercentComplete 0
 
             # Poll runspaces and output results as they complete (streaming, not buffering)
-            $completedCount = 0
+            $completedBatchCount = 0
+            $totalBatches = $batches.Count
             while ($runspaces.Count -gt 0) {
                 foreach ($runspace in @($runspaces)) {
                     if ($runspace.Status.IsCompleted) {
                         try {
                             $result = $runspace.Pipe.EndInvoke($runspace.Status)
                             if ($result) {
-                                $completedCount++
-                                $fileName = [System.IO.Path]::GetFileName($runspace.File)
-                                Write-PSFMessage -Level Verbose -Message "Completed $completedCount of $totalFiles files"
-                                $progressParams = @{
-                                    Activity        = "Processing files in parallel with $currentTool"
-                                    Status          = "Completed: $fileName ($completedCount/$totalFiles)"
-                                    PercentComplete = ($completedCount / $totalFiles) * 100
+                                $completedBatchCount++
+                                if ($BatchSize -gt 1) {
+                                    $batchFileNames = ($runspace.Batch | ForEach-Object { [System.IO.Path]::GetFileName($_) }) -join ', '
+                                    Write-PSFMessage -Level Verbose -Message "Completed batch $completedBatchCount of $totalBatches ($($runspace.Batch.Count) files)"
+                                    $progressParams = @{
+                                        Activity        = $processingActivity
+                                        Status          = "Completed batch: $batchFileNames ($completedBatchCount/$totalBatches)"
+                                        PercentComplete = ($completedBatchCount / $totalBatches) * 100
+                                    }
+                                } else {
+                                    $fileName = [System.IO.Path]::GetFileName($runspace.Batch[0])
+                                    Write-PSFMessage -Level Verbose -Message "Completed $completedBatchCount of $totalBatches files"
+                                    $progressParams = @{
+                                        Activity        = $processingActivity
+                                        Status          = "Completed: $fileName ($completedBatchCount/$totalBatches)"
+                                        PercentComplete = ($completedBatchCount / $totalBatches) * 100
+                                    }
                                 }
                                 Write-Progress @progressParams
                                 # Store duration for time calculation and output result to pipeline immediately
-                                $null = $allDurations.Add($result.Duration.TotalSeconds)
-                                $result
+                                # Result could be an array if batch contains multiple files
+                                if ($result -is [array]) {
+                                    foreach ($r in $result) {
+                                        if ($r.Duration) {
+                                            $null = $allDurations.Add($r.Duration.TotalSeconds)
+                                        }
+                                        $r
+                                    }
+                                } else {
+                                    if ($result.Duration) {
+                                        $null = $allDurations.Add($result.Duration.TotalSeconds)
+                                    }
+                                    $result
+                                }
                             } else {
-                                # File was skipped (likely by -SkipModified fresh check)
-                                $completedCount++
-                                $fileName = [System.IO.Path]::GetFileName($runspace.File)
-                                Write-PSFMessage -Level Verbose -Message "Skipped (fresh check): $($runspace.File)"
-                                $progressParams = @{
-                                    Activity        = "Processing files in parallel with $currentTool"
-                                    Status          = "Skipped (modified): $fileName ($completedCount/$totalFiles)"
-                                    PercentComplete = ($completedCount / $totalFiles) * 100
+                                # Batch was skipped (likely by -SkipModified fresh check)
+                                $completedBatchCount++
+                                if ($BatchSize -gt 1) {
+                                    $batchFileNames = ($runspace.Batch | ForEach-Object { [System.IO.Path]::GetFileName($_) }) -join ', '
+                                    Write-PSFMessage -Level Verbose -Message "Skipped batch (fresh check): $batchFileNames"
+                                    $progressParams = @{
+                                        Activity        = $processingActivity
+                                        Status          = "Skipped batch (modified): $batchFileNames ($completedBatchCount/$totalBatches)"
+                                        PercentComplete = ($completedBatchCount / $totalBatches) * 100
+                                    }
+                                } else {
+                                    $fileName = [System.IO.Path]::GetFileName($runspace.Batch[0])
+                                    Write-PSFMessage -Level Verbose -Message "Skipped (fresh check): $($runspace.Batch[0])"
+                                    $progressParams = @{
+                                        Activity        = $processingActivity
+                                        Status          = "Skipped (modified): $fileName ($completedBatchCount/$totalBatches)"
+                                        PercentComplete = ($completedBatchCount / $totalBatches) * 100
+                                    }
                                 }
                                 Write-Progress @progressParams
                             }
                         } catch {
-                            Write-PSFMessage -Level Error -Message "Error retrieving result for $($runspace.File): $_"
+                            $batchDesc = if ($BatchSize -gt 1) { "batch $($runspace.Index)" } else { $runspace.Batch[0] }
+                            Write-PSFMessage -Level Error -Message "Error retrieving result for $batchDesc : $_"
                         } finally {
                             $runspace.Pipe.Dispose()
-                            $runspaces = $runspaces | Where-Object { $_.Status -ne $runspace.Status }
+                            # Remove this specific runspace from the collection by comparing the runspace object itself
+                            $runspaces = $runspaces | Where-Object { $_ -ne $runspace }
                         }
                     }
                 }
@@ -1190,7 +1260,7 @@ function Invoke-AITool {
             }
 
             Write-PSFMessage -Level Verbose -Message "All parallel processing complete"
-            Write-Progress -Activity "Processing files in parallel with $currentTool" -Completed
+            Write-Progress -Activity $processingActivity -Completed
 
             # Calculate and report time savings from parallel execution
             $parallelEndTime = Get-Date
@@ -1205,14 +1275,7 @@ function Invoke-AITool {
                 Write-PSFMessage -Level Verbose -Message "Time saved: $([Math]::Round($timeSaved, 1))s ($([Math]::Round($percentSaved, 1))% faster)"
             }
         } else {
-            # Sequential processing with optional batching
-            # Group files into batches based on BatchSize parameter
-            $batches = @()
-            for ($i = 0; $i -lt $filesToProcess.Count; $i += $BatchSize) {
-                $batchEnd = [Math]::Min($i + $BatchSize, $filesToProcess.Count)
-                $batches += ,@($filesToProcess[$i..($batchEnd - 1)])
-            }
-
+            # Sequential processing (batches already created above)
             Write-PSFMessage -Level Verbose -Message "Processing $totalFiles files in $($batches.Count) batch(es) of up to $BatchSize file(s) each"
 
             $batchIndex = 0

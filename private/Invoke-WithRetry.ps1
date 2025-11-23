@@ -12,6 +12,7 @@ function Invoke-WithRetry {
         - Connection/network issues
         - Quota/usage limits
         - Service overload/capacity issues
+        - File locking conflicts (EBUSY errors from concurrent access)
 
         Non-retryable errors fail immediately without retry:
         - Configuration errors (NoneType, invalid configuration, missing configuration)
@@ -21,7 +22,8 @@ function Invoke-WithRetry {
         - Permission denied
 
         Retries with delays of 2, 4, 8, 16, 32, 64 minutes until the cumulative delay would exceed
-        the maximum total time (default 240 minutes / 4 hours).
+        the maximum total time (default 240 minutes / 4 hours). File locking conflicts use shorter
+        delays: 1, 2, 4, 8, 16, 32, 60 seconds with exponential backoff.
 
     .PARAMETER ScriptBlock
         The scriptblock to execute. Should return output and set $LASTEXITCODE.
@@ -146,6 +148,10 @@ function Invoke-WithRetry {
                 $isRetryable = $true
                 $errorReason = "service overload"
             }
+            elseif ($resultText -match '(?i)(EBUSY|resource busy or locked|file is being used)') {
+                $isRetryable = $true
+                $errorReason = "file locking conflict"
+            }
         }
 
         # If error is not retryable, fail immediately
@@ -165,7 +171,14 @@ function Invoke-WithRetry {
         }
 
         # Calculate next delay using exponential backoff: 2^n minutes where n is attempt number
-        $nextDelayMinutes = $InitialDelayMinutes * [Math]::Pow(2, $attemptNumber - 1)
+        # For file locking conflicts, use much shorter delays (seconds instead of minutes)
+        if ($errorReason -eq "file locking conflict") {
+            # Start with 1 second, then 2, 4, 8, 16, 32, 60 seconds (exponential backoff in seconds, capped at 1 minute)
+            $nextDelaySeconds = [Math]::Min(60, [Math]::Pow(2, $attemptNumber - 1))
+            $nextDelayMinutes = $nextDelaySeconds / 60.0  # Convert to minutes for consistency
+        } else {
+            $nextDelayMinutes = $InitialDelayMinutes * [Math]::Pow(2, $attemptNumber - 1)
+        }
 
         # Check if adding this delay would exceed the max total time
         $projectedTotal = $cumulativeDelayMinutes + $nextDelayMinutes
