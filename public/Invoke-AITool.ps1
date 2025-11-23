@@ -94,6 +94,12 @@ function Invoke-AITool {
         Processes only the last N files from the pipeline input (after applying -Skip if specified).
         Works like Select-Object -Last. Can be combined with -First to get both first and last items.
 
+    .PARAMETER BatchSize
+        Number of files to process together in a single AI request. Default is 1 (one file at a time).
+        When set to a value greater than 1, multiple files are combined into a single prompt to reduce
+        token usage and API calls. Useful for batch translation, formatting, or other similar operations.
+        Note: The AI's response must include clear file separators or filenames to distinguish outputs.
+
     .EXAMPLE
         Get-ChildItem *.Tests.ps1 | Invoke-AITool -Prompt "Refactor from Pester v4 to v5"
 
@@ -192,6 +198,10 @@ function Invoke-AITool {
     .EXAMPLE
         Get-ChildItem *.ps1 | Invoke-AITool -Prompt "Fix bugs" -First 2 -Last 2
         Processes the first 2 and last 2 files from the pipeline (like Select-Object behavior).
+
+    .EXAMPLE
+        Get-ChildItem *.md | Invoke-AITool -Context "glossary.md" -Prompt "prompt.md" -BatchSize 3
+        Processes 3 markdown files at a time in a single AI request to reduce token usage.
     #>
     [CmdletBinding()]
     param(
@@ -240,7 +250,10 @@ function Invoke-AITool {
         [int]$First,
         [Parameter()]
         [ValidateRange(1, [int]::MaxValue)]
-        [int]$Last
+        [int]$Last,
+        [Parameter()]
+        [ValidateRange(1, 50)]
+        [int]$BatchSize = 1
     )
 
     begin {
@@ -1184,122 +1197,206 @@ function Invoke-AITool {
                 Write-PSFMessage -Level Verbose -Message "Time saved: $([Math]::Round($timeSaved, 1))s ($([Math]::Round($percentSaved, 1))% faster)"
             }
         } else {
-            # Original sequential processing
-            foreach ($singleFile in $filesToProcess) {
-            $fileIndex++
+            # Sequential processing with optional batching
+            # Group files into batches based on BatchSize parameter
+            $batches = @()
+            for ($i = 0; $i -lt $filesToProcess.Count; $i += $BatchSize) {
+                $batchEnd = [Math]::Min($i + $BatchSize, $filesToProcess.Count)
+                $batches += ,@($filesToProcess[$i..($batchEnd - 1)])
+            }
 
-            # Stage 2: Fresh verification right before execution (if -SkipModified is enabled)
-            # This catches files modified by concurrent processes or previous file processing
-            if ($SkipModified -and $gitContext -and $script:cachedRepoRoot) {
-                Write-PSFMessage -Level Verbose -Message "Fresh check before processing: $singleFile"
+            Write-PSFMessage -Level Verbose -Message "Processing $totalFiles files in $($batches.Count) batch(es) of up to $BatchSize file(s) each"
 
-                # Quick single-file check using git diff with file path (fast, 2 git commands)
-                # Uses cached repo root to avoid repeated git rev-parse calls
-                $isModified = $false
+            $batchIndex = 0
+            foreach ($batch in $batches) {
+                $batchIndex++
 
-                try {
-                    # Normalize both paths to forward slashes for comparison
-                    $normalizedFile = $singleFile -replace '\\', '/'
-                    $normalizedRepoRoot = $script:cachedRepoRoot -replace '\\', '/'
-                    $escapedRepoRoot = [regex]::Escape($normalizedRepoRoot)
+                # Filter out modified files from this batch if -SkipModified is enabled
+                $batchFilesToProcess = @()
+                foreach ($singleFile in $batch) {
+                    $fileIndex++
 
-                    # Remove repo root prefix and leading slash to get relative path
-                    $relativePath = $normalizedFile -replace "^$escapedRepoRoot", '' -replace '^/', ''
+                            # Stage 2: Fresh verification right before execution (if -SkipModified is enabled)
+                    # This catches files modified by concurrent processes or previous file processing
+                    if ($SkipModified -and $gitContext -and $script:cachedRepoRoot) {
+                        Write-PSFMessage -Level Verbose -Message "Fresh check before processing: $singleFile"
 
-                    # Check uncommitted changes for this specific file
-                    $workingTreeCheck = git diff --name-only -- $relativePath 2>&1
-                    if ($LASTEXITCODE -eq 0 -and $workingTreeCheck) {
-                        Write-PSFMessage -Level Verbose -Message "File has uncommitted changes: $singleFile"
-                        $isModified = $true
-                    }
+                        # Quick single-file check using git diff with file path (fast, 2 git commands)
+                        # Uses cached repo root to avoid repeated git rev-parse calls
+                        $isModified = $false
 
-                    # Check staged changes for this specific file
-                    if (-not $isModified) {
-                        $stagedCheck = git diff --name-only --cached -- $relativePath 2>&1
-                        if ($LASTEXITCODE -eq 0 -and $stagedCheck) {
-                            Write-PSFMessage -Level Verbose -Message "File has staged changes: $singleFile"
+                        try {
+                            # Normalize both paths to forward slashes for comparison
+                            $normalizedFile = $singleFile -replace '\\', '/'
+                            $normalizedRepoRoot = $script:cachedRepoRoot -replace '\\', '/'
+                            $escapedRepoRoot = [regex]::Escape($normalizedRepoRoot)
+
+                            # Remove repo root prefix and leading slash to get relative path
+                            $relativePath = $normalizedFile -replace "^$escapedRepoRoot", '' -replace '^/', ''
+
+                            # Check uncommitted changes for this specific file
+                            $workingTreeCheck = git diff --name-only -- $relativePath 2>&1
+                            if ($LASTEXITCODE -eq 0 -and $workingTreeCheck) {
+                                Write-PSFMessage -Level Verbose -Message "File has uncommitted changes: $singleFile"
+                                $isModified = $true
+                            }
+
+                            # Check staged changes for this specific file
+                            if (-not $isModified) {
+                                $stagedCheck = git diff --name-only --cached -- $relativePath 2>&1
+                                if ($LASTEXITCODE -eq 0 -and $stagedCheck) {
+                                    Write-PSFMessage -Level Verbose -Message "File has staged changes: $singleFile"
+                                    $isModified = $true
+                                }
+                            }
+                        } catch {
+                            Write-PSFMessage -Level Warning -Message "Error during fresh check: $_. Skipping file to be safe."
                             $isModified = $true
                         }
+
+                        if ($isModified) {
+                            Write-PSFMessage -Level Verbose -Message "Skipping file (fresh check): $singleFile"
+                            continue
+                        }
                     }
-                } catch {
-                    Write-PSFMessage -Level Warning -Message "Error during fresh check: $_. Skipping file to be safe."
-                    $isModified = $true
+
+                    # Add file to batch for processing
+                    $batchFilesToProcess += $singleFile
                 }
 
-                if ($isModified) {
-                    Write-PSFMessage -Level Verbose -Message "Skipping file (fresh check): $singleFile"
+                # Skip this batch if all files were filtered out
+                if ($batchFilesToProcess.Count -eq 0) {
+                    Write-PSFMessage -Level Verbose -Message "Batch $batchIndex skipped - all files were filtered"
                     continue
                 }
-            }
 
-            Write-PSFMessage -Level Debug -Message "Processing file $fileIndex of $totalFiles - $singleFile"
+                Write-PSFMessage -Level Debug -Message "Processing batch $batchIndex of $($batches.Count) with $($batchFilesToProcess.Count) file(s)"
 
-            # Show progress for file processing
-            $fileName = [System.IO.Path]::GetFileName($singleFile)
-            $progressParams = @{
-                Activity        = "Processing with $currentTool"
-                Status          = "$fileName ($fileIndex/$totalFiles)"
-                PercentComplete = ($fileIndex / $totalFiles) * 100
-            }
-            Write-Progress @progressParams
+                # Show progress for batch processing
+                $batchFileNames = ($batchFilesToProcess | ForEach-Object { [System.IO.Path]::GetFileName($_) }) -join ', '
+                $progressParams = @{
+                    Activity        = "Processing with $currentTool"
+                    Status          = "Batch $batchIndex/$($batches.Count): $batchFileNames"
+                    PercentComplete = (($batchIndex - 1) / $batches.Count) * 100
+                }
+                Write-Progress @progressParams
 
-            # Build combined prompt with context files for non-Aider tools
-            # For GitHub Copilot, use @ prefix to tell it to read files directly
-            if ($currentTool -eq 'Copilot') {
-                # Check if the prompt was originally a file path (has the "(File: ...)" suffix)
-                if ($promptText -match '\(File: (.+)\)$') {
-                    # Extract the original prompt file path
-                    $promptFilePath = $Matches[1]
-                    # Use @ prefix for both files, with explicit instruction about which file to edit
-                    $fullPrompt = "Read the instructions from @$promptFilePath and apply them to @$singleFile. Edit and save the changes to $singleFile."
+                # Build combined prompt for the batch
+                # For BatchSize > 1, include all files and their contents
+                if ($BatchSize -gt 1) {
+                    # Multi-file batch mode: include file contents in prompt
+                    Write-PSFMessage -Level Verbose -Message "BATCH MODE: Combining $($batchFilesToProcess.Count) files into a SINGLE API request"
+                    $fullPrompt = $promptText
+
+                    # Add context files
+                    if ($currentTool -ne 'Aider' -and $contextFiles.Count -gt 0) {
+                        Write-PSFMessage -Level Verbose -Message "Adding $($contextFiles.Count) context file(s) to batch prompt"
+                        foreach ($ctxFile in $contextFiles) {
+                            if (Test-Path $ctxFile) {
+                                $content = Get-Content -Path $ctxFile -Raw
+                                $fullPrompt += "`n`n--- Context from $($ctxFile) ---`n$content"
+                                Write-PSFMessage -Level Verbose -Message "Added context: $ctxFile"
+                            }
+                        }
+                    }
+
+                    # Add all files in batch with their contents
+                    $fullPrompt += "`n`n=== FILES TO PROCESS ===`n"
+                    foreach ($fileInBatch in $batchFilesToProcess) {
+                        $fileContent = Get-Content -Path $fileInBatch -Raw -ErrorAction SilentlyContinue
+                        # Use full absolute path in the prompt for clarity
+                        $absolutePath = (Resolve-Path -Path $fileInBatch).Path
+                        $fullPrompt += "`n--- FILE: $absolutePath ---`n$fileContent`n"
+                        Write-PSFMessage -Level Verbose -Message "  - Added file to batch: $absolutePath"
+                    }
+
+                    Write-PSFMessage -Level Verbose -Message "Batch prompt ready: $($batchFilesToProcess.Count) files combined into single request"
+
+                    # Add Claude reasoning trigger if needed
+                    if ($currentTool -eq 'Claude' -and $reasoningEffortToUse) {
+                        $reasoningPhrase = switch ($reasoningEffortToUse) {
+                            'low'    { 'think hard' }
+                            'medium' { 'think harder' }
+                            'high'   { 'ultrathink' }
+                        }
+                        Write-PSFMessage -Level Verbose -Message "Adding Claude reasoning trigger: $reasoningPhrase"
+                        $fullPrompt += "`n`n$reasoningPhrase"
+                    }
+
+                    # For batch mode, we use the first file as the "target" for tool arguments
+                    # but the prompt contains all files
+                    $targetFile = $batchFilesToProcess[0]
+                    $targetDirectory = Split-Path $targetFile -Parent
+
                 } else {
-                    # Prompt is plain text, so just include the target file with @ prefix
-                    $fullPrompt = "@$singleFile`n`n$promptText"
-                }
-            } else {
-                $fullPrompt = $promptText
+                    # Single file mode (original behavior)
+                    $singleFile = $batchFilesToProcess[0]
+                    $targetFile = $singleFile
+                    $targetDirectory = Split-Path $targetFile -Parent
 
-                # Auto-inject file path into prompt if not already present (for other tools)
-                $fileNameOnly = [System.IO.Path]::GetFileName($singleFile)
-                $hasFileReference = $fullPrompt -match [regex]::Escape($singleFile) -or
-                                    $fullPrompt -match [regex]::Escape($fileNameOnly) -or
-                                    $fullPrompt -match '\$file'
-
-                if (-not $hasFileReference) {
-                    Write-PSFMessage -Level Verbose -Message "File path not detected in prompt, injecting it"
-                    $fullPrompt += "`n`nTARGET FILE TO EDIT: $singleFile`nEDIT THIS FILE AND WRITE IT TO DISK."
-                }
-            }
-
-            if ($currentTool -ne 'Aider' -and $contextFiles.Count -gt 0) {
-                Write-PSFMessage -Level Verbose -Message "Building combined prompt with $($contextFiles.Count) context file(s)"
-                foreach ($ctxFile in $contextFiles) {
-                    if (Test-Path $ctxFile) {
-                        $content = Get-Content -Path $ctxFile -Raw
-                        $fullPrompt += "`n`n--- Context from $($ctxFile) ---`n$content"
-                        Write-PSFMessage -Level Verbose -Message "Added context from: $ctxFile"
+                    # For GitHub Copilot, use @ prefix to tell it to read files directly
+                    if ($currentTool -eq 'Copilot') {
+                        # Check if the prompt was originally a file path (has the "(File: ...)" suffix)
+                        if ($promptText -match '\(File: (.+)\)$') {
+                            # Extract the original prompt file path
+                            $promptFilePath = $Matches[1]
+                            # Use @ prefix for both files, with explicit instruction about which file to edit
+                            $fullPrompt = "Read the instructions from @$promptFilePath and apply them to @$singleFile. Edit and save the changes to $singleFile."
+                        } else {
+                            # Prompt is plain text, so just include the target file with @ prefix
+                            $fullPrompt = "@$singleFile`n`n$promptText"
+                        }
                     } else {
-                        Write-PSFMessage -Level Warning -Message "Context file not found: $ctxFile"
+                        $fullPrompt = $promptText
+
+                        # Auto-inject file path into prompt if not already present (for other tools)
+                        $fileNameOnly = [System.IO.Path]::GetFileName($singleFile)
+                        $hasFileReference = $fullPrompt -match [regex]::Escape($singleFile) -or
+                                            $fullPrompt -match [regex]::Escape($fileNameOnly) -or
+                                            $fullPrompt -match '\$file'
+
+                        if (-not $hasFileReference) {
+                            Write-PSFMessage -Level Verbose -Message "File path not detected in prompt, injecting it"
+                            $fullPrompt += "`n`nTARGET FILE TO EDIT: $singleFile`nEDIT THIS FILE AND WRITE IT TO DISK."
+                        }
+                    }
+
+                    if ($currentTool -ne 'Aider' -and $contextFiles.Count -gt 0) {
+                        Write-PSFMessage -Level Verbose -Message "Building combined prompt with $($contextFiles.Count) context file(s)"
+                        foreach ($ctxFile in $contextFiles) {
+                            if (Test-Path $ctxFile) {
+                                $content = Get-Content -Path $ctxFile -Raw
+                                $fullPrompt += "`n`n--- Context from $($ctxFile) ---`n$content"
+                                Write-PSFMessage -Level Verbose -Message "Added context from: $ctxFile"
+                            } else {
+                                Write-PSFMessage -Level Warning -Message "Context file not found: $ctxFile"
+                            }
+                        }
+                    }
+
+                    # Add Claude reasoning trigger if needed
+                    if ($currentTool -eq 'Claude' -and $reasoningEffortToUse) {
+                        $reasoningPhrase = switch ($reasoningEffortToUse) {
+                            'low'    { 'think hard' }
+                            'medium' { 'think harder' }
+                            'high'   { 'ultrathink' }
+                        }
+                        Write-PSFMessage -Level Verbose -Message "Adding Claude reasoning trigger: $reasoningPhrase"
+                        $fullPrompt += "`n`n$reasoningPhrase"
                     }
                 }
-            }
 
-            # Add Claude reasoning trigger if needed
-            if ($currentTool -eq 'Claude' -and $reasoningEffortToUse) {
-                $reasoningPhrase = switch ($reasoningEffortToUse) {
-                    'low'    { 'think hard' }
-                    'medium' { 'think harder' }
-                    'high'   { 'ultrathink' }
+                # Change to target file's directory
+                if ($targetDirectory -and (Test-Path $targetDirectory)) {
+                    Push-Location $targetDirectory
+                    Write-PSFMessage -Level Verbose -Message "Changed to target directory: $targetDirectory"
                 }
-                Write-PSFMessage -Level Verbose -Message "Adding Claude reasoning trigger: $reasoningPhrase"
-                $fullPrompt += "`n`n$reasoningPhrase"
-            }
 
                 Write-PSFMessage -Level Verbose -Message "Building arguments for $currentTool"
                 $arguments = switch ($currentTool) {
                 'Claude' {
                     $argumentParams = @{
-                        TargetFile          = $singleFile
+                        TargetFile          = $targetFile
                         Message             = $promptText
                         Model               = $modelToUse
                         UsePermissionBypass = $permissionBypass
@@ -1313,7 +1410,7 @@ function Invoke-AITool {
                 }
                 'Aider' {
                     $argumentParams = @{
-                        TargetFile          = $singleFile
+                        TargetFile          = $targetFile
                         Message             = $promptText
                         Model               = $modelToUse
                         EditMode            = $editMode
@@ -1329,7 +1426,7 @@ function Invoke-AITool {
                 }
                 'Gemini' {
                     $argumentParams = @{
-                        TargetFile          = $singleFile
+                        TargetFile          = $targetFile
                         Message             = $promptText
                         Model               = $modelToUse
                         UsePermissionBypass = $permissionBypass
@@ -1340,7 +1437,7 @@ function Invoke-AITool {
                 }
                 'Copilot' {
                     $argumentParams = @{
-                        TargetFile          = $singleFile
+                        TargetFile          = $targetFile
                         Message             = $promptText
                         Model               = $modelToUse
                         UsePermissionBypass = $permissionBypass
@@ -1354,7 +1451,7 @@ function Invoke-AITool {
                 }
                 'Codex' {
                     $argumentParams = @{
-                        TargetFile          = $singleFile
+                        TargetFile          = $targetFile
                         Message             = $promptText
                         Model               = $modelToUse
                         UsePermissionBypass = $permissionBypass
@@ -1372,7 +1469,7 @@ function Invoke-AITool {
                 }
                 'Cursor' {
                     $argumentParams = @{
-                        TargetFile          = $singleFile
+                        TargetFile          = $targetFile
                         Message             = $promptText
                         Model               = $modelToUse
                         ContextFiles        = $contextFiles
@@ -1398,7 +1495,7 @@ function Invoke-AITool {
                 try {
                     $psopenaiParams = @{
                         Prompt          = $promptText
-                        InputImage      = $singleFile
+                        InputImage      = $targetFile
                         GenerationType  = 'Image'
                     }
                     if ($modelToUse) {
@@ -1410,7 +1507,7 @@ function Invoke-AITool {
                     # Output result directly to pipeline
                     $result
 
-                    # Skip to next file, don't use normal CLI execution
+                    # Skip to next batch, don't use normal CLI execution
                     continue
                 } catch {
                     Write-PSFMessage -Level Error -Message "PSOpenAI invocation failed: $_"
@@ -1419,15 +1516,6 @@ function Invoke-AITool {
             }
 
             Write-PSFMessage -Level Debug -Message "Final prompt sent to $currentTool :`n$fullPrompt"
-
-            # Change to target file's directory to resolve workspace permission issues
-            $targetDirectory = Split-Path $singleFile -Parent
-            if ($targetDirectory -and (Test-Path $targetDirectory)) {
-                Push-Location $targetDirectory
-                Write-PSFMessage -Level Verbose -Message "Changed to target directory: $targetDirectory"
-            } else {
-                Write-PSFMessage -Level Warning -Message "Could not determine target directory for: $singleFile"
-            }
 
             $startTime = Get-Date
 
@@ -1484,9 +1572,9 @@ function Invoke-AITool {
                     Write-PSFMessage -Level Verbose -Message "Tool exited with code: $exitCode"
 
                     if ($exitCode -eq 0) {
-                        Write-PSFMessage -Level Verbose -Message "File processed successfully: $singleFile"
+                        Write-PSFMessage -Level Verbose -Message "Batch processed successfully"
                     } else {
-                        Write-PSFMessage -Level Warning -Message "Failed to process $singleFile (exit code: $exitCode)"
+                        Write-PSFMessage -Level Warning -Message "Failed to process batch (exit code: $exitCode)"
                         Write-PSFMessage -Level Verbose -Message "Note: Some tools write debug/warning messages to stderr even on success. Check the output above to determine if there was a real error."
                     }
 
@@ -1516,7 +1604,8 @@ function Invoke-AITool {
                         & $toolDef.Command @arguments *>&1 | Tee-Object @outFileParams
                     }.GetNewClosure()
 
-                    $capturedOutput = Invoke-WithRetry -ScriptBlock $executionScriptBlock -EnableRetry:(-not $DisableRetry) -MaxTotalMinutes $MaxRetryMinutes -Context "Aider processing $singleFile"
+                    $batchDesc = if ($BatchSize -gt 1) { "batch of $($batchFilesToProcess.Count) file(s)" } else { $targetFile }
+                    $capturedOutput = Invoke-WithRetry -ScriptBlock $executionScriptBlock -EnableRetry:(-not $DisableRetry) -MaxTotalMinutes $MaxRetryMinutes -Context "Aider processing $batchDesc"
                     $toolExitCode = $LASTEXITCODE
 
                     # capturedOutput is already populated from Invoke-WithRetry
@@ -1527,9 +1616,13 @@ function Invoke-AITool {
                         $capturedOutput = $capturedOutput | Out-String
                     }
 
+                    # For batch mode, include batch info in output
+                    $outputFileName = if ($BatchSize -gt 1) { "Batch $batchIndex ($($batchFilesToProcess.Count) files)" } else { [System.IO.Path]::GetFileName($targetFile) }
+                    $outputFullPath = if ($BatchSize -gt 1) { "Batch: $($batchFilesToProcess -join ', ')" } else { $targetFile }
+
                     [PSCustomObject]@{
-                        FileName     = [System.IO.Path]::GetFileName($singleFile)
-                        FullPath     = $singleFile
+                        FileName     = $outputFileName
+                        FullPath     = $outputFullPath
                         Tool         = $currentTool
                         Model        = if ($modelToUse) { $modelToUse } else { 'Default' }
                         Result       = $capturedOutput
@@ -1537,13 +1630,14 @@ function Invoke-AITool {
                         EndTime      = $endTime = Get-Date
                         Duration     = [timespan]::FromSeconds([Math]::Floor(($endTime - $startTime).TotalSeconds))
                         Success      = ($toolExitCode -eq 0)
+                        BatchFiles   = if ($BatchSize -gt 1) { $batchFilesToProcess } else { @($targetFile) }
                     }
 
                     Write-PSFMessage -Level Verbose -Message "Tool exited with code: $LASTEXITCODE"
                     if ($LASTEXITCODE -eq 0) {
-                        Write-PSFMessage -Level Verbose -Message "Successfully processed: $singleFile"
+                        Write-PSFMessage -Level Verbose -Message "Successfully processed: $batchDesc"
                     } else {
-                        Write-PSFMessage -Level Error -Message "Failed to process $singleFile (exit code $LASTEXITCODE)"
+                        Write-PSFMessage -Level Error -Message "Failed to process $batchDesc (exit code $LASTEXITCODE)"
                     }
 
                     # Restore original encoding
@@ -1557,16 +1651,20 @@ function Invoke-AITool {
 & '$($toolDef.Command)' $($arguments | ForEach-Object { if ($_ -match '\s') { "'$($_.Replace("'", "''"))'" } else { $_ } }) *>&1 | Out-File -FilePath '$tempOutputFile' -Encoding utf8
 "@)
 
-                    Invoke-WithRetry -ScriptBlock $executionScriptBlock -EnableRetry:(-not $DisableRetry) -MaxTotalMinutes $MaxRetryMinutes -Context "Codex processing $singleFile"
+                    $batchDesc = if ($BatchSize -gt 1) { "batch of $($batchFilesToProcess.Count) file(s)" } else { $targetFile }
+                    Invoke-WithRetry -ScriptBlock $executionScriptBlock -EnableRetry:(-not $DisableRetry) -MaxTotalMinutes $MaxRetryMinutes -Context "Codex processing $batchDesc"
                     $toolExitCode = $LASTEXITCODE
 
                     # Read output from temp file
                     $capturedOutput = Get-Content -Path $tempOutputFile -Raw -Encoding utf8
                     Remove-Item -Path $tempOutputFile -Force -ErrorAction SilentlyContinue
 
+                    $outputFileName = if ($BatchSize -gt 1) { "Batch $batchIndex ($($batchFilesToProcess.Count) files)" } else { [System.IO.Path]::GetFileName($targetFile) }
+                    $outputFullPath = if ($BatchSize -gt 1) { "Batch: $($batchFilesToProcess -join ', ')" } else { $targetFile }
+
                     [PSCustomObject]@{
-                        FileName     = [System.IO.Path]::GetFileName($singleFile)
-                        FullPath     = $singleFile
+                        FileName     = $outputFileName
+                        FullPath     = $outputFullPath
                         Tool         = $currentTool
                         Model        = if ($modelToUse) { $modelToUse } else { 'Default' }
                         Result       = $capturedOutput
@@ -1574,13 +1672,14 @@ function Invoke-AITool {
                         EndTime      = $endTime = Get-Date
                         Duration     = [timespan]::FromSeconds([Math]::Floor(($endTime - $startTime).TotalSeconds))
                         Success      = ($toolExitCode -eq 0)
+                        BatchFiles   = if ($BatchSize -gt 1) { $batchFilesToProcess } else { @($targetFile) }
                     }
 
                     Write-PSFMessage -Level Verbose -Message "Tool exited with code: $LASTEXITCODE"
                     if ($LASTEXITCODE -eq 0) {
-                        Write-PSFMessage -Level Verbose -Message "Successfully processed: $singleFile"
+                        Write-PSFMessage -Level Verbose -Message "Successfully processed: $batchDesc"
                     } else {
-                        Write-PSFMessage -Level Error -Message "Failed to process $singleFile (exit code $LASTEXITCODE)"
+                        Write-PSFMessage -Level Error -Message "Failed to process $batchDesc (exit code $LASTEXITCODE)"
                     }
                 } elseif ($currentTool -eq 'Cursor') {
                     Write-PSFMessage -Level Verbose -Message "Executing Cursor (prompt in arguments)"
@@ -1590,16 +1689,20 @@ function Invoke-AITool {
                         & $toolDef.Command @arguments *>&1 | Out-File -FilePath $tempOutputFile -Encoding utf8
                     }.GetNewClosure()
 
-                    Invoke-WithRetry -ScriptBlock $executionScriptBlock -EnableRetry:(-not $DisableRetry) -MaxTotalMinutes $MaxRetryMinutes -Context "Cursor processing $singleFile"
+                    $batchDesc = if ($BatchSize -gt 1) { "batch of $($batchFilesToProcess.Count) file(s)" } else { $targetFile }
+                    Invoke-WithRetry -ScriptBlock $executionScriptBlock -EnableRetry:(-not $DisableRetry) -MaxTotalMinutes $MaxRetryMinutes -Context "Cursor processing $batchDesc"
                     $toolExitCode = $LASTEXITCODE
 
                     # Read output from temp file
                     $capturedOutput = Get-Content -Path $tempOutputFile -Raw -Encoding utf8
                     Remove-Item -Path $tempOutputFile -Force -ErrorAction SilentlyContinue
 
+                    $outputFileName = if ($BatchSize -gt 1) { "Batch $batchIndex ($($batchFilesToProcess.Count) files)" } else { [System.IO.Path]::GetFileName($targetFile) }
+                    $outputFullPath = if ($BatchSize -gt 1) { "Batch: $($batchFilesToProcess -join ', ')" } else { $targetFile }
+
                     [PSCustomObject]@{
-                        FileName     = [System.IO.Path]::GetFileName($singleFile)
-                        FullPath     = $singleFile
+                        FileName     = $outputFileName
+                        FullPath     = $outputFullPath
                         Tool         = $currentTool
                         Model        = if ($modelToUse) { $modelToUse } else { 'Default' }
                         Result       = $capturedOutput
@@ -1607,13 +1710,14 @@ function Invoke-AITool {
                         EndTime      = $endTime = Get-Date
                         Duration     = [timespan]::FromSeconds([Math]::Floor(($endTime - $startTime).TotalSeconds))
                         Success      = ($toolExitCode -eq 0)
+                        BatchFiles   = if ($BatchSize -gt 1) { $batchFilesToProcess } else { @($targetFile) }
                     }
 
                     Write-PSFMessage -Level Verbose -Message "Tool exited with code: $LASTEXITCODE"
                     if ($LASTEXITCODE -eq 0) {
-                        Write-PSFMessage -Level Verbose -Message "Successfully processed: $singleFile"
+                        Write-PSFMessage -Level Verbose -Message "Successfully processed: $batchDesc"
                     } else {
-                        Write-PSFMessage -Level Error -Message "Failed to process $singleFile (exit code $LASTEXITCODE)"
+                        Write-PSFMessage -Level Error -Message "Failed to process $batchDesc (exit code $LASTEXITCODE)"
                     }
                 } else {
                         Write-PSFMessage -Level Verbose -Message "Piping combined prompt to $currentTool"
@@ -1623,7 +1727,8 @@ function Invoke-AITool {
                         $fullPrompt | & $toolDef.Command @arguments *>&1 | Out-File -FilePath $tempOutputFile -Encoding utf8
                     }.GetNewClosure()
 
-                    Invoke-WithRetry -ScriptBlock $executionScriptBlock -EnableRetry:(-not $DisableRetry) -MaxTotalMinutes $MaxRetryMinutes -Context "$currentTool processing $singleFile"
+                    $batchDesc = if ($BatchSize -gt 1) { "batch of $($batchFilesToProcess.Count) file(s)" } else { $targetFile }
+                    Invoke-WithRetry -ScriptBlock $executionScriptBlock -EnableRetry:(-not $DisableRetry) -MaxTotalMinutes $MaxRetryMinutes -Context "$currentTool processing $batchDesc"
                     $toolExitCode = $LASTEXITCODE
 
                     # Read output from temp file
@@ -1635,9 +1740,12 @@ function Invoke-AITool {
                         $capturedOutput = $capturedOutput -replace '(?m)^\s*\[WARN\]\s+Skipping unreadable directory:.*?\n', ''
                     }
 
+                    $outputFileName = if ($BatchSize -gt 1) { "Batch $batchIndex ($($batchFilesToProcess.Count) files)" } else { [System.IO.Path]::GetFileName($targetFile) }
+                    $outputFullPath = if ($BatchSize -gt 1) { "Batch: $($batchFilesToProcess -join ', ')" } else { $targetFile }
+
                     [PSCustomObject]@{
-                        FileName     = [System.IO.Path]::GetFileName($singleFile)
-                        FullPath     = $singleFile
+                        FileName     = $outputFileName
+                        FullPath     = $outputFullPath
                         Tool         = $currentTool
                         Model        = if ($modelToUse) { $modelToUse } else { 'Default' }
                         Result       = $capturedOutput
@@ -1645,17 +1753,18 @@ function Invoke-AITool {
                         EndTime      = $endTime = Get-Date
                         Duration     = [timespan]::FromSeconds([Math]::Floor(($endTime - $startTime).TotalSeconds))
                         Success      = ($toolExitCode -eq 0)
+                        BatchFiles   = if ($BatchSize -gt 1) { $batchFilesToProcess } else { @($targetFile) }
                     }
 
                     Write-PSFMessage -Level Verbose -Message "Tool exited with code: $LASTEXITCODE"
                     if ($LASTEXITCODE -eq 0) {
-                        Write-PSFMessage -Level Verbose -Message "Successfully processed: $singleFile"
+                        Write-PSFMessage -Level Verbose -Message "Successfully processed: $batchDesc"
                     } else {
-                        Write-PSFMessage -Level Error -Message "Failed to process $singleFile (exit code $LASTEXITCODE)"
+                        Write-PSFMessage -Level Error -Message "Failed to process $batchDesc (exit code $LASTEXITCODE)"
                     }
                 }
             } catch {
-                Write-PSFMessage -Level Error -Message "Error processing $singleFile : $_"
+                Write-PSFMessage -Level Error -Message "Error processing batch: $_"
             } finally {
                 # Clean up Codex environment variable
                 if ($currentTool -eq 'Codex') {
@@ -1665,20 +1774,20 @@ function Invoke-AITool {
                     }
                 }
 
-                # Restore location after processing each file
+                # Restore location after processing each batch
                 if ($targetDirectory -and (Test-Path $targetDirectory)) {
                     Pop-Location
-                    Write-PSFMessage -Level Verbose -Message "Restored location after processing file"
+                    Write-PSFMessage -Level Verbose -Message "Restored location after processing batch"
                 }
             }
 
-            # Apply delay after processing each file (if not the last file)
-            if ($DelaySeconds -gt 0 -and $fileIndex -lt $totalFiles) {
-                Write-PSFMessage -Level Verbose -Message "Waiting $DelaySeconds seconds before processing next file..."
+            # Apply delay after processing each batch (if not the last batch)
+            if ($DelaySeconds -gt 0 -and $batchIndex -lt $batches.Count) {
+                Write-PSFMessage -Level Verbose -Message "Waiting $DelaySeconds seconds before processing next batch..."
                 Start-Sleep -Seconds $DelaySeconds
             }
-            } # End of foreach ($singleFile in $filesToProcess)
-            } # End of if ($Parallel) / else block
+            } # End of foreach ($batch in $batches)
+            } # End of if ($shouldUseParallel) / else block
 
             Write-Progress -Activity "Processing with $currentTool" -Completed
         } finally {
