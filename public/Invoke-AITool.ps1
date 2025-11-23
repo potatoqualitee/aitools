@@ -261,6 +261,11 @@ function Invoke-AITool {
         $script:originalLocation = Get-Location
         Write-PSFMessage -Level Verbose -Message "Saved original location: $script:originalLocation"
 
+        # BatchSize > 1 automatically disables parallel processing
+        if ($BatchSize -gt 1) {
+            Write-PSFMessage -Level Verbose -Message "BatchSize set to $BatchSize - parallel processing will be automatically disabled for batch mode"
+        }
+
         # Initialize attachment array if not already set (for piped images)
         $imageAttachments = @()
         if ($Attachment) {
@@ -1017,12 +1022,13 @@ function Invoke-AITool {
             Write-Warning "Using $MaxThreads threads may cause API rate limiting. Consider reducing -MaxThreads if you encounter throttling errors."
         }
 
-        # PARALLEL PROCESSING: Default behavior for 4+ files (unless -NoParallel is specified)
-        # Sequential processing for 1-3 files or when -NoParallel is used
+        # PARALLEL PROCESSING: Default behavior for 4+ files (unless -NoParallel is specified or BatchSize > 1)
+        # Sequential processing for 1-3 files, when -NoParallel is used, or when using batch mode
         # (Many AI CLI tools have rate limits and don't handle high concurrency well)
+        # BatchSize > 1 requires sequential processing to combine files into single API requests
         $pool = $null
         $runspaces = @()
-        $shouldUseParallel = (-not $NoParallel) -and ($filesToProcess.Count -ge 4)
+        $shouldUseParallel = (-not $NoParallel) -and ($BatchSize -eq 1) -and ($filesToProcess.Count -ge 4)
 
         try {
             if ($shouldUseParallel) {
@@ -1033,6 +1039,8 @@ function Invoke-AITool {
             } else {
                 if ($NoParallel) {
                     Write-PSFMessage -Level Verbose -Message "Sequential processing enforced by -NoParallel switch"
+                } elseif ($BatchSize -gt 1) {
+                    Write-PSFMessage -Level Verbose -Message "Sequential processing enforced by -BatchSize $BatchSize (batch mode requires sequential processing)"
                 } else {
                     Write-PSFMessage -Level Verbose -Message "Sequential processing (only $($filesToProcess.Count) file(s), parallel is used for 4+ files)"
                 }
