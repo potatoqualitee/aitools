@@ -202,6 +202,83 @@ function Get-TestData {
             Write-Host "Claude version: $version"
         }
     }
+
+    Context 'ContextFilter Parameter' {
+        BeforeAll {
+            $script:recipesPath = Join-Path $PSScriptRoot 'recipes'
+        }
+
+        It 'Should have test recipe files available' {
+            Test-Path (Join-Path $script:recipesPath 'alligator-eggs.md') | Should -Be $true
+            Test-Path (Join-Path $script:recipesPath 'alligator-eggs.fr.md') | Should -Be $true
+            Test-Path (Join-Path $script:recipesPath 'alligator-eggs.fr-ca.md') | Should -Be $true
+        }
+
+        It 'Should include English original as dynamic context and Claude should see it' {
+            $frFile = Join-Path $script:recipesPath 'alligator-eggs.fr.md'
+            # Ask Claude to list the context files it can see - the English original should be included
+            $result = Invoke-AITool -Path $frFile -Prompt "List ALL the filenames you can see in this prompt, including any context files. Just list the filenames, one per line." -Tool Claude -ContextFilter { $_ -replace '\.fr\.md$', '.md' }
+
+            $result | Should -Not -BeNullOrEmpty
+            $result.Success | Should -Be $true
+            $result.Tool | Should -Be 'Claude'
+            # Claude should mention the English original file in its response
+            $result.Result | Should -Match 'alligator-eggs\.md'
+        }
+
+        It 'Should use ContextFilterBase to find context files in different directory' {
+            $frCaFile = Join-Path $script:recipesPath 'alligator-eggs.fr-ca.md'
+            # Ask Claude what files it sees - should include the English original from ContextFilterBase
+            $result = Invoke-AITool -Path $frCaFile -Prompt "What filenames can you see? List them all." -Tool Claude -ContextFilter { [System.IO.Path]::GetFileName($_) -replace '\.fr-ca\.md$', '.md' } -ContextFilterBase $script:recipesPath
+
+            $result | Should -Not -BeNullOrEmpty
+            $result.Success | Should -Be $true
+            # Should see the English original
+            $result.Result | Should -Match 'alligator-eggs\.md'
+        }
+
+        It 'Should handle batch processing with ContextFilter and see context files' {
+            $frFiles = Get-ChildItem -Path $script:recipesPath -Filter '*.fr*.md'
+            # Ask Claude what context files it can see in the batch
+            $result = $frFiles | Invoke-AITool -Prompt "List ALL filenames you can see. Include both the files to process and any context files." -Tool Claude -ContextFilter { $_ -replace '\.fr(-ca)?\.md$', '.md' } -BatchSize 3
+
+            $result | Should -Not -BeNullOrEmpty
+            $result.Success | Should -Be $true
+            # Should see the English original as dynamic context
+            $result.Result | Should -Match 'alligator-eggs\.md'
+        }
+
+        It 'Should warn but not fail when ContextFilter derived file does not exist' {
+            $frFile = Join-Path $script:recipesPath 'alligator-eggs.fr.md'
+            # This filter will derive a non-existent file
+            $result = Invoke-AITool -Path $frFile -Prompt "Say hello" -Tool Claude -ContextFilter { $_ -replace '\.fr\.md$', '.nonexistent.md' } -WarningVariable warnings
+
+            $result | Should -Not -BeNullOrEmpty
+            $result.Success | Should -Be $true
+            # Should have warned about missing file
+            $warnings | Should -Not -BeNullOrEmpty
+        }
+
+        It 'Should deduplicate when multiple inputs derive same context file' {
+            # Both .fr.md and .fr-ca.md would derive the same .md file
+            $frFiles = Get-ChildItem -Path $script:recipesPath -Filter '*.fr*.md'
+            # With deduplication, the English original should only appear once even though two files derive it
+            $result = $frFiles | Invoke-AITool -Prompt "How many times does 'alligator-eggs.md' appear as a context file? Answer with just a number." -Tool Claude -ContextFilter { $_ -replace '\.fr(-ca)?\.md$', '.md' } -BatchSize 3
+
+            $result | Should -Not -BeNullOrEmpty
+            $result.Success | Should -Be $true
+            # Should only see the context file once due to deduplication
+            $result.Result | Should -Match '1'
+        }
+
+        It 'Should work with null ContextFilter (no-op, existing behavior unchanged)' {
+            $frFile = Join-Path $script:recipesPath 'alligator-eggs.fr.md'
+            $result = Invoke-AITool -Path $frFile -Prompt "Say hello" -Tool Claude
+
+            $result | Should -Not -BeNullOrEmpty
+            $result.Success | Should -Be $true
+        }
+    }
 }
 
 AfterAll {

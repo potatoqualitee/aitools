@@ -106,6 +106,40 @@ function Invoke-AITool {
         Recommendation: A BatchSize of 3 has shown good results for most workloads. If you experience
         inconsistencies or quality issues in AI responses when trying for higher numbers like 5 or 10, reduce this to see what works best for your workload.
 
+    .PARAMETER ContextFilter
+        A scriptblock that transforms each input filename to derive a matching context file.
+        This enables pairing files (like translations) with their originals without sending all
+        originals to every batch. The scriptblock receives each input file path via $_ and should
+        return the filename (or path) of the corresponding context file.
+
+        Example: -ContextFilter { $_ -replace '\.fr\.md$', '.md' }
+        This transforms 'recipe1.fr.md' to 'recipe1.md', allowing French translations to include
+        their English originals as context.
+
+        Path resolution order:
+        1. If result is an absolute path and exists, use it directly
+        2. If result is relative: look in -ContextFilterBase directory (if specified),
+           otherwise look in the same directory as the source file
+        3. If file not found, warn and continue (doesn't fail the batch)
+
+        Edge cases handled:
+        - Returns same file as input: skipped (won't add file as its own context)
+        - Returns non-existent file: warns, continues processing
+        - Throws error: catches, warns, continues with other files
+        - Duplicate derived files in batch: deduplicated (same context added only once)
+
+    .PARAMETER ContextFilterBase
+        Base directory or directories to search for files derived by -ContextFilter. Accepts
+        an array of paths that are searched in order until the derived file is found. The source
+        file's directory is always searched last as a fallback.
+
+        Example: -ContextFilterBase "C:\originals"
+        Combined with -ContextFilter { [System.IO.Path]::GetFileName($_) -replace '\.fr\.md$', '.md' }
+        would look for English originals in C:\originals, then fall back to the source file's directory.
+
+        Example with multiple directories: -ContextFilterBase "C:\primary", "C:\fallback"
+        Searches C:\primary first, then C:\fallback, then the source file's directory.
+
     .EXAMPLE
         Get-ChildItem *.Tests.ps1 | Invoke-AITool -Prompt "Refactor from Pester v4 to v5"
 
@@ -213,8 +247,26 @@ function Invoke-AITool {
         Get-ChildItem *.ps1 | Invoke-AITool -Prompt "Add error handling" -BatchSize 3 -MaxThreads 3
         With 12+ files: Creates batches of 3 files each, then processes 3 batches concurrently.
         This combines token savings (batching) with speed (parallelism).
+
+    .EXAMPLE
+        Get-ChildItem *.fr.md | Invoke-AITool -Prompt "Review translation" -ContextFilter { $_ -replace '\.fr\.md$', '.md' }
+        For each French markdown file, automatically includes the corresponding English original as context.
+        recipe1.fr.md gets recipe1.md as context, recipe2.fr.md gets recipe2.md, etc.
+
+    .EXAMPLE
+        Get-ChildItem *.fr.md | Invoke-AITool -Prompt "Review translation" -Context "glossary.md" -ContextFilter { $_ -replace '\.fr\.md$', '.md' } -BatchSize 4
+        Combines static context (glossary.md added to every batch) with dynamic context (each French file
+        gets its English original). With BatchSize 4, each batch gets the glossary plus up to 4 original files.
+
+    .EXAMPLE
+        Get-ChildItem C:\translations\*.fr.md | Invoke-AITool -Prompt "Check consistency" -ContextFilter { [System.IO.Path]::GetFileName($_) -replace '\.fr\.md$', '.md' } -ContextFilterBase "C:\originals"
+        Processes French files from C:\translations but looks for English originals in C:\originals.
+
+    .EXAMPLE
+        Get-ChildItem *.fr.md | Invoke-AITool -Prompt "Review" -ContextFilter { $_ -replace '\.fr\.md$', '.md' } -WhatIf
+        Preview which dynamic context files would be added without actually processing.
     #>
-    [CmdletBinding()]
+    [CmdletBinding(SupportsShouldProcess)]
     param(
         [Parameter()]
         [Alias('Name')]
@@ -264,7 +316,11 @@ function Invoke-AITool {
         [int]$Last,
         [Parameter()]
         [ValidateRange(1, 50)]
-        [int]$BatchSize = 1
+        [int]$BatchSize = 1,
+        [Parameter()]
+        [scriptblock]$ContextFilter,
+        [Parameter()]
+        [string[]]$ContextFilterBase
     )
 
     begin {
@@ -1102,7 +1158,9 @@ function Invoke-AITool {
                     $DisableRetry,
                     $MaxRetryMinutes,
                     $SkipModified,
-                    $BatchSize
+                    $BatchSize,
+                    $ContextFilter,
+                    $ContextFilterBase
                 )
 
                 # Set environment variables for LiteLLM (used by Aider) in this runspace
@@ -1127,6 +1185,8 @@ function Invoke-AITool {
                 if ($DisableRetry) { $params['DisableRetry'] = $DisableRetry }
                 if ($MaxRetryMinutes) { $params['MaxRetryMinutes'] = $MaxRetryMinutes }
                 if ($SkipModified) { $params['SkipModified'] = $SkipModified }
+                if ($ContextFilter) { $params['ContextFilter'] = $ContextFilter }
+                if ($ContextFilterBase) { $params['ContextFilterBase'] = $ContextFilterBase }
 
                 # Call Invoke-AITool recursively with -NoParallel to prevent nested parallelization
                 Invoke-AITool @params
@@ -1158,6 +1218,8 @@ function Invoke-AITool {
                 $null = $runspace.AddArgument($MaxRetryMinutes)      # MaxRetryMinutes
                 $null = $runspace.AddArgument($SkipModified)         # SkipModified
                 $null = $runspace.AddArgument($BatchSize)            # BatchSize
+                $null = $runspace.AddArgument($ContextFilter)        # ContextFilter
+                $null = $runspace.AddArgument($ContextFilterBase)    # ContextFilterBase
                 $runspace.RunspacePool = $pool
 
                 $runspaces += [PSCustomObject]@{
@@ -1359,15 +1421,111 @@ function Invoke-AITool {
                     Write-PSFMessage -Level Verbose -Message "BATCH MODE: Combining $($batchFilesToProcess.Count) files into a SINGLE API request"
                     $fullPrompt = $promptText
 
-                    # Add context files
+                    # Add static context files
                     if ($currentTool -ne 'Aider' -and $contextFiles.Count -gt 0) {
-                        Write-PSFMessage -Level Verbose -Message "Adding $($contextFiles.Count) context file(s) to batch prompt"
+                        Write-PSFMessage -Level Verbose -Message "Adding $($contextFiles.Count) static context file(s) to batch prompt"
                         foreach ($ctxFile in $contextFiles) {
                             if (Test-Path $ctxFile) {
                                 $content = Get-Content -Path $ctxFile -Raw
                                 $fullPrompt += "`n`n--- Context from $($ctxFile) ---`n$content"
-                                Write-PSFMessage -Level Verbose -Message "Added context: $ctxFile"
+                                Write-PSFMessage -Level Verbose -Message "Added static context: $ctxFile"
                             }
+                        }
+                    }
+
+                    # Add dynamic context files from ContextFilter
+                    if ($currentTool -ne 'Aider' -and $ContextFilter) {
+                        Write-PSFMessage -Level Verbose -Message "Processing ContextFilter for $($batchFilesToProcess.Count) file(s)"
+                        Write-PSFMessage -Level Debug -Message "ContextFilter scriptblock: $($ContextFilter.ToString())"
+                        if ($ContextFilterBase) {
+                            Write-PSFMessage -Level Debug -Message "ContextFilterBase directories: $($ContextFilterBase -join ', ')"
+                        }
+                        $addedDynamicContext = @{}  # Track added files for deduplication
+
+                        foreach ($fileInBatch in $batchFilesToProcess) {
+                            Write-PSFMessage -Level Debug -Message "ContextFilter: Processing input file: $fileInBatch"
+                            try {
+                                # Run the scriptblock with $_ set to current file
+                                $derivedName = $fileInBatch | ForEach-Object $ContextFilter
+                                Write-PSFMessage -Level Debug -Message "ContextFilter: Scriptblock returned: '$derivedName'"
+
+                                if (-not $derivedName) {
+                                    Write-PSFMessage -Level Debug -Message "ContextFilter: Empty result, skipping"
+                                    continue
+                                }
+
+                                # Resolve path
+                                $derivedPath = $null
+                                if ([System.IO.Path]::IsPathRooted($derivedName)) {
+                                    Write-PSFMessage -Level Debug -Message "ContextFilter: Derived name is absolute path"
+                                    if (Test-Path $derivedName) {
+                                        $derivedPath = $derivedName
+                                        Write-PSFMessage -Level Debug -Message "ContextFilter: Absolute path exists: $derivedPath"
+                                    } else {
+                                        Write-PSFMessage -Level Debug -Message "ContextFilter: Absolute path does not exist: $derivedName"
+                                    }
+                                } else {
+                                    # Build list of directories to search
+                                    $searchDirs = @()
+                                    if ($ContextFilterBase) {
+                                        $searchDirs += $ContextFilterBase
+                                    }
+                                    $searchDirs += Split-Path $fileInBatch -Parent
+                                    Write-PSFMessage -Level Debug -Message "ContextFilter: Search directories (in order): $($searchDirs -join ', ')"
+
+                                    # Search each directory until we find the file
+                                    foreach ($baseDir in $searchDirs) {
+                                        $candidatePath = Join-Path $baseDir $derivedName
+                                        Write-PSFMessage -Level Debug -Message "ContextFilter: Checking candidate path: $candidatePath"
+                                        if (Test-Path $candidatePath) {
+                                            $derivedPath = (Resolve-Path $candidatePath).Path
+                                            Write-PSFMessage -Level Debug -Message "ContextFilter: Found at: $derivedPath"
+                                            break
+                                        }
+                                    }
+                                }
+
+                                # Skip if file not found
+                                if (-not $derivedPath -or -not (Test-Path $derivedPath)) {
+                                    $searchedPath = if ($derivedPath) { $derivedPath } else { $derivedName }
+                                    Write-PSFMessage -Level Warning -Message "ContextFilter derived file not found: $searchedPath (from $fileInBatch)"
+                                    Write-PSFMessage -Level Debug -Message "ContextFilter: File not found after searching all directories"
+                                    continue
+                                }
+
+                                # Skip if derived file is same as input file
+                                $normalizedDerived = (Resolve-Path $derivedPath).Path -replace '\\', '/'
+                                $normalizedInput = (Resolve-Path $fileInBatch).Path -replace '\\', '/'
+                                if ($normalizedDerived -eq $normalizedInput) {
+                                    Write-PSFMessage -Level Debug -Message "ContextFilter: Skipping - derived file same as input: $derivedPath"
+                                    continue
+                                }
+
+                                # Skip if already added (deduplication)
+                                if ($addedDynamicContext.ContainsKey($normalizedDerived)) {
+                                    Write-PSFMessage -Level Debug -Message "ContextFilter: Skipping duplicate: $derivedPath (already added)"
+                                    continue
+                                }
+
+                                # Add to prompt with ShouldProcess
+                                if ($PSCmdlet.ShouldProcess($derivedPath, "Add dynamic context from ContextFilter")) {
+                                    $content = Get-Content -Path $derivedPath -Raw
+                                    $contentLength = if ($content) { $content.Length } else { 0 }
+                                    Write-PSFMessage -Level Debug -Message "ContextFilter: Reading content from $derivedPath ($contentLength chars)"
+                                    $fullPrompt += "`n`n--- Dynamic Context from $derivedPath (for $fileInBatch) ---`n$content"
+                                    $addedDynamicContext[$normalizedDerived] = $true
+                                    Write-PSFMessage -Level Verbose -Message "Added dynamic context: $derivedPath (from $fileInBatch)"
+                                }
+
+                            } catch {
+                                Write-PSFMessage -Level Warning -Message "ContextFilter error for $fileInBatch : $_"
+                                Write-PSFMessage -Level Debug -Message "ContextFilter: Exception details: $($_.Exception.GetType().Name) - $($_.Exception.Message)"
+                            }
+                        }
+
+                        if ($addedDynamicContext.Count -gt 0) {
+                            Write-PSFMessage -Level Verbose -Message "Added $($addedDynamicContext.Count) dynamic context file(s) to batch prompt"
+                            Write-PSFMessage -Level Debug -Message "ContextFilter: Dynamic context files added: $($addedDynamicContext.Keys -join ', ')"
                         }
                     }
 
@@ -1433,15 +1591,88 @@ function Invoke-AITool {
                     }
 
                     if ($currentTool -ne 'Aider' -and $contextFiles.Count -gt 0) {
-                        Write-PSFMessage -Level Verbose -Message "Building combined prompt with $($contextFiles.Count) context file(s)"
+                        Write-PSFMessage -Level Verbose -Message "Building combined prompt with $($contextFiles.Count) static context file(s)"
                         foreach ($ctxFile in $contextFiles) {
                             if (Test-Path $ctxFile) {
                                 $content = Get-Content -Path $ctxFile -Raw
                                 $fullPrompt += "`n`n--- Context from $($ctxFile) ---`n$content"
-                                Write-PSFMessage -Level Verbose -Message "Added context from: $ctxFile"
+                                Write-PSFMessage -Level Verbose -Message "Added static context from: $ctxFile"
                             } else {
                                 Write-PSFMessage -Level Warning -Message "Context file not found: $ctxFile"
                             }
+                        }
+                    }
+
+                    # Add dynamic context from ContextFilter for single file
+                    if ($currentTool -ne 'Aider' -and $ContextFilter) {
+                        Write-PSFMessage -Level Debug -Message "ContextFilter: Processing single file: $singleFile"
+                        Write-PSFMessage -Level Debug -Message "ContextFilter scriptblock: $($ContextFilter.ToString())"
+                        if ($ContextFilterBase) {
+                            Write-PSFMessage -Level Debug -Message "ContextFilterBase directories: $($ContextFilterBase -join ', ')"
+                        }
+                        try {
+                            # Run the scriptblock with $_ set to current file
+                            $derivedName = $singleFile | ForEach-Object $ContextFilter
+                            Write-PSFMessage -Level Debug -Message "ContextFilter: Scriptblock returned: '$derivedName'"
+
+                            if ($derivedName) {
+                                # Resolve path
+                                $derivedPath = $null
+                                if ([System.IO.Path]::IsPathRooted($derivedName)) {
+                                    Write-PSFMessage -Level Debug -Message "ContextFilter: Derived name is absolute path"
+                                    if (Test-Path $derivedName) {
+                                        $derivedPath = $derivedName
+                                        Write-PSFMessage -Level Debug -Message "ContextFilter: Absolute path exists: $derivedPath"
+                                    } else {
+                                        Write-PSFMessage -Level Debug -Message "ContextFilter: Absolute path does not exist: $derivedName"
+                                    }
+                                } else {
+                                    # Build list of directories to search
+                                    $searchDirs = @()
+                                    if ($ContextFilterBase) {
+                                        $searchDirs += $ContextFilterBase
+                                    }
+                                    $searchDirs += Split-Path $singleFile -Parent
+                                    Write-PSFMessage -Level Debug -Message "ContextFilter: Search directories (in order): $($searchDirs -join ', ')"
+
+                                    # Search each directory until we find the file
+                                    foreach ($baseDir in $searchDirs) {
+                                        $candidatePath = Join-Path $baseDir $derivedName
+                                        Write-PSFMessage -Level Debug -Message "ContextFilter: Checking candidate path: $candidatePath"
+                                        if (Test-Path $candidatePath) {
+                                            $derivedPath = (Resolve-Path $candidatePath).Path
+                                            Write-PSFMessage -Level Debug -Message "ContextFilter: Found at: $derivedPath"
+                                            break
+                                        }
+                                    }
+                                }
+
+                                if ($derivedPath -and (Test-Path $derivedPath)) {
+                                    # Skip if derived file is same as input file
+                                    $normalizedDerived = (Resolve-Path $derivedPath).Path -replace '\\', '/'
+                                    $normalizedInput = (Resolve-Path $singleFile).Path -replace '\\', '/'
+                                    if ($normalizedDerived -ne $normalizedInput) {
+                                        if ($PSCmdlet.ShouldProcess($derivedPath, "Add dynamic context from ContextFilter")) {
+                                            $content = Get-Content -Path $derivedPath -Raw
+                                            $contentLength = if ($content) { $content.Length } else { 0 }
+                                            Write-PSFMessage -Level Debug -Message "ContextFilter: Reading content from $derivedPath ($contentLength chars)"
+                                            $fullPrompt += "`n`n--- Dynamic Context from $derivedPath ---`n$content"
+                                            Write-PSFMessage -Level Verbose -Message "Added dynamic context: $derivedPath (from $singleFile)"
+                                        }
+                                    } else {
+                                        Write-PSFMessage -Level Debug -Message "ContextFilter: Skipping - derived file same as input: $derivedPath"
+                                    }
+                                } else {
+                                    $searchedPath = if ($derivedPath) { $derivedPath } else { $derivedName }
+                                    Write-PSFMessage -Level Warning -Message "ContextFilter derived file not found: $searchedPath (from $singleFile)"
+                                    Write-PSFMessage -Level Debug -Message "ContextFilter: File not found after searching all directories"
+                                }
+                            } else {
+                                Write-PSFMessage -Level Debug -Message "ContextFilter: Empty result, skipping"
+                            }
+                        } catch {
+                            Write-PSFMessage -Level Warning -Message "ContextFilter error for $singleFile : $_"
+                            Write-PSFMessage -Level Debug -Message "ContextFilter: Exception details: $($_.Exception.GetType().Name) - $($_.Exception.Message)"
                         }
                     }
 
