@@ -842,6 +842,16 @@ function Invoke-AITool {
                     }
                     New-CursorArgument @argumentParams
                 }
+                'Ollama' {
+                    $argumentParams = @{
+                        Message             = $fullPrompt
+                        Model               = $modelToUse
+                        UsePermissionBypass = $permissionBypass
+                        Verbose             = $VerbosePreference
+                        Debug               = $DebugPreference
+                    }
+                    New-OllamaArgument @argumentParams
+                }
             }
 
                 Write-PSFMessage -Level Verbose -Message "Executing chat mode: $($toolDef.Command) $($arguments -join ' ')"
@@ -1866,6 +1876,17 @@ function Invoke-AITool {
                         $argumentParams['ReasoningEffort'] = $reasoningEffortToUse
                     }
                     New-CursorArgument @argumentParams
+                }
+                'Ollama' {
+                    $argumentParams = @{
+                        TargetFile          = $targetFile
+                        Message             = $promptText
+                        Model               = $modelToUse
+                        UsePermissionBypass = $permissionBypass
+                        Verbose             = $VerbosePreference
+                        Debug               = $DebugPreference
+                    }
+                    New-OllamaArgument @argumentParams
                 }
                 'PSOPenAI' {
                     # PSOpenAI is handled via direct function call, not CLI arguments
