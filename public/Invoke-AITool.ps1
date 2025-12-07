@@ -710,6 +710,12 @@ function Invoke-AITool {
                 continue
             }
 
+            # Check Gemini authentication
+            if ($currentTool -eq 'Gemini' -and -not (Test-GeminiAuth)) {
+                Write-PSFMessage -Level Warning -Message "Gemini authentication not configured. Please set an auth method in ~/.gemini/settings.json or specify one of the following environment variables: GEMINI_API_KEY, GOOGLE_GENAI_USE_VERTEXAI, GOOGLE_GENAI_USE_GCA. Skipping."
+                continue
+            }
+
             # Load configuration for current tool
             $permissionBypass = Get-PSFConfigValue -FullName "AITools.$currentTool.PermissionBypass" -Fallback $true
             Write-PSFMessage -Level Verbose -Message "Permission bypass: $permissionBypass"
