@@ -140,6 +140,17 @@ function Invoke-AITool {
         Example with multiple directories: -ContextFilterBase "C:\primary", "C:\fallback"
         Searches C:\primary first, then C:\fallback, then the source file's directory.
 
+    .PARAMETER MaxErrors
+        Maximum number of general errors before bailing out of batch processing. Default is 10.
+        When this threshold is reached, remaining files/batches are skipped to avoid wasting
+        API calls on a failing operation. Useful when processing many files in parallel.
+
+    .PARAMETER MaxTokenErrors
+        Maximum number of token/credit-related errors before bailing out. Default is 3.
+        Token errors are detected by patterns like "token", "credits", "exhausted", "quota",
+        "insufficient", "billing", "payment". A lower threshold is used because these errors
+        typically indicate account-wide issues that won't resolve by retrying other files.
+
     .EXAMPLE
         Get-ChildItem *.Tests.ps1 | Invoke-AITool -Prompt "Refactor from Pester v4 to v5"
 
@@ -320,7 +331,13 @@ function Invoke-AITool {
         [Parameter()]
         [scriptblock]$ContextFilter,
         [Parameter()]
-        [string[]]$ContextFilterBase
+        [string[]]$ContextFilterBase,
+        [Parameter()]
+        [ValidateRange(1, 1000)]
+        [int]$MaxErrors = 10,
+        [Parameter()]
+        [ValidateRange(1, 100)]
+        [int]$MaxTokenErrors = 3
     )
 
     begin {
@@ -585,6 +602,11 @@ function Invoke-AITool {
 
         $filesToProcess = @()
         $script:totalInputFiles = 0
+
+        # Error tracking for bail-out feature
+        $script:errorCount = 0
+        $script:tokenErrorCount = 0
+        $script:bailedOut = $false
     }
 
     process {
@@ -1242,7 +1264,7 @@ function Invoke-AITool {
             # Poll runspaces and output results as they complete (streaming, not buffering)
             $completedBatchCount = 0
             $totalBatches = $batches.Count
-            while ($runspaces.Count -gt 0) {
+            while ($runspaces.Count -gt 0 -and -not $script:bailedOut) {
                 foreach ($runspace in @($runspaces)) {
                     if ($runspace.Status.IsCompleted) {
                         try {
@@ -1274,11 +1296,53 @@ function Invoke-AITool {
                                         if ($r.Duration) {
                                             $null = $allDurations.Add($r.Duration.TotalSeconds)
                                         }
+                                        # Check for errors and track for bail-out
+                                        if ($r.Success -eq $false) {
+                                            $resultText = $r.Result | Out-String
+                                            if ($resultText -match '(?i)(token|credits?|exhausted|quota|usage.?limit|insufficient|billing|payment)') {
+                                                $script:tokenErrorCount++
+                                                Write-PSFMessage -Level Warning -Message "Token/credit error detected ($script:tokenErrorCount of $MaxTokenErrors max)"
+                                                if ($script:tokenErrorCount -ge $MaxTokenErrors) {
+                                                    $script:bailedOut = $true
+                                                    Write-PSFMessage -Level Error -Message "BAILING OUT: Reached $MaxTokenErrors token/credit errors. Stopping all processing."
+                                                    Write-Warning "BAILING OUT: Reached $MaxTokenErrors token/credit errors. Remaining files will not be processed."
+                                                }
+                                            } else {
+                                                $script:errorCount++
+                                                Write-PSFMessage -Level Warning -Message "Error detected ($script:errorCount of $MaxErrors max)"
+                                                if ($script:errorCount -ge $MaxErrors) {
+                                                    $script:bailedOut = $true
+                                                    Write-PSFMessage -Level Error -Message "BAILING OUT: Reached $MaxErrors errors. Stopping all processing."
+                                                    Write-Warning "BAILING OUT: Reached $MaxErrors errors. Remaining files will not be processed."
+                                                }
+                                            }
+                                        }
                                         $r
                                     }
                                 } else {
                                     if ($result.Duration) {
                                         $null = $allDurations.Add($result.Duration.TotalSeconds)
+                                    }
+                                    # Check for errors and track for bail-out
+                                    if ($result.Success -eq $false) {
+                                        $resultText = $result.Result | Out-String
+                                        if ($resultText -match '(?i)(token|credits?|exhausted|quota|usage.?limit|insufficient|billing|payment)') {
+                                            $script:tokenErrorCount++
+                                            Write-PSFMessage -Level Warning -Message "Token/credit error detected ($script:tokenErrorCount of $MaxTokenErrors max)"
+                                            if ($script:tokenErrorCount -ge $MaxTokenErrors) {
+                                                $script:bailedOut = $true
+                                                Write-PSFMessage -Level Error -Message "BAILING OUT: Reached $MaxTokenErrors token/credit errors. Stopping all processing."
+                                                Write-Warning "BAILING OUT: Reached $MaxTokenErrors token/credit errors. Remaining files will not be processed."
+                                            }
+                                        } else {
+                                            $script:errorCount++
+                                            Write-PSFMessage -Level Warning -Message "Error detected ($script:errorCount of $MaxErrors max)"
+                                            if ($script:errorCount -ge $MaxErrors) {
+                                                $script:bailedOut = $true
+                                                Write-PSFMessage -Level Error -Message "BAILING OUT: Reached $MaxErrors errors. Stopping all processing."
+                                                Write-Warning "BAILING OUT: Reached $MaxErrors errors. Remaining files will not be processed."
+                                            }
+                                        }
                                     }
                                     $result
                                 }
@@ -1321,6 +1385,20 @@ function Invoke-AITool {
                 }
             }
 
+            # If we bailed out, clean up remaining runspaces
+            if ($script:bailedOut -and $runspaces.Count -gt 0) {
+                Write-PSFMessage -Level Warning -Message "Cleaning up $($runspaces.Count) remaining runspace(s) after bail-out"
+                foreach ($runspace in $runspaces) {
+                    try {
+                        $runspace.Pipe.Stop()
+                        $runspace.Pipe.Dispose()
+                    } catch {
+                        Write-PSFMessage -Level Debug -Message "Error disposing runspace: $_"
+                    }
+                }
+                $runspaces = @()
+            }
+
             Write-PSFMessage -Level Verbose -Message "All parallel processing complete"
             Write-Progress -Activity $processingActivity -Completed
 
@@ -1342,6 +1420,11 @@ function Invoke-AITool {
 
             $batchIndex = 0
             foreach ($batch in $batches) {
+                # Check for bail-out before processing each batch
+                if ($script:bailedOut) {
+                    Write-PSFMessage -Level Warning -Message "Skipping remaining batches due to bail-out"
+                    break
+                }
                 $batchIndex++
 
                 # Filter out modified files from this batch if -SkipModified is enabled
@@ -2080,6 +2163,28 @@ function Invoke-AITool {
                 if ($targetDirectory -and (Test-Path $targetDirectory)) {
                     Pop-Location
                     Write-PSFMessage -Level Verbose -Message "Restored location after processing batch"
+                }
+            }
+
+            # Check for errors and track for bail-out (sequential mode)
+            if ($toolExitCode -ne 0) {
+                $resultText = if ($capturedOutput) { $capturedOutput | Out-String } else { '' }
+                if ($resultText -match '(?i)(token|credits?|exhausted|quota|usage.?limit|insufficient|billing|payment)') {
+                    $script:tokenErrorCount++
+                    Write-PSFMessage -Level Warning -Message "Token/credit error detected ($script:tokenErrorCount of $MaxTokenErrors max)"
+                    if ($script:tokenErrorCount -ge $MaxTokenErrors) {
+                        $script:bailedOut = $true
+                        Write-PSFMessage -Level Error -Message "BAILING OUT: Reached $MaxTokenErrors token/credit errors. Stopping all processing."
+                        Write-Warning "BAILING OUT: Reached $MaxTokenErrors token/credit errors. Remaining files will not be processed."
+                    }
+                } else {
+                    $script:errorCount++
+                    Write-PSFMessage -Level Warning -Message "Error detected ($script:errorCount of $MaxErrors max)"
+                    if ($script:errorCount -ge $MaxErrors) {
+                        $script:bailedOut = $true
+                        Write-PSFMessage -Level Error -Message "BAILING OUT: Reached $MaxErrors errors. Stopping all processing."
+                        Write-Warning "BAILING OUT: Reached $MaxErrors errors. Remaining files will not be processed."
+                    }
                 }
             }
 
