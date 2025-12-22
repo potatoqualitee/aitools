@@ -2,7 +2,7 @@ Pester v4 to v5 Migration
 
 **MIGRATE** the Pester test file `--FILEPATH--` from version 4 to version 5. **APPLY ALL CHANGES DIRECTLY TO THE FILE AND SAVE IT.**
 
-Follow the migration guidelines in conventions.md. This is a PowerShell module test file.
+Follow the migration guidelines in style.md. This is a PowerShell module test file.
 
 Command name:
 --CMDNAME--
