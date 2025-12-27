@@ -9,7 +9,7 @@
     RootModule        = 'aitools.psm1'
 
     # Version number of this module.
-    ModuleVersion     = '1.0.12'
+    ModuleVersion     = '1.0.15'
 
     # ID used to uniquely identify this module
     GUID              = 'c90f5001-c492-4fbe-8ab3-f03599951bd0'

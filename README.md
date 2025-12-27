@@ -71,7 +71,13 @@ Pick the AI assistant you want:
 # Install one
 Install-AITool -Name Claude
 
-# Or several
+# Install a specific version
+Install-AITool -Name Claude -Version 2.0.52
+
+# Install a specific version and auto-remove other versions
+Install-AITool -Name Aider -Version 0.45.0 -UninstallOtherVersions
+
+# Or several tools
 Install-AITool -Name Gemini, Aider
 
 # Or all of them

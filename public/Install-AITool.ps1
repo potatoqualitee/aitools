@@ -10,6 +10,10 @@ function Install-AITool {
     .PARAMETER Name
         The name of the AI tool to install. Valid values: Claude, Aider, Gemini, Copilot, Codex
 
+    .PARAMETER Version
+        The specific version to install (e.g., "1.2.3"). If not specified, installs the latest version.
+        If other versions are already installed, you will be prompted to uninstall them.
+
     .PARAMETER SkipInitialization
         Skip the automatic initialization/login command after installation.
         By default, initialization runs automatically after successful installation.
@@ -18,6 +22,9 @@ function Install-AITool {
         Installation scope: CurrentUser (default) or LocalMachine (requires sudo/admin privileges).
         CurrentUser installs to user-local directories without requiring elevated permissions.
         LocalMachine installs system-wide and requires sudo on Linux/MacOS or admin privileges on Windows.
+
+    .PARAMETER UninstallOtherVersions
+        Automatically uninstall other versions without prompting. Only applies when -Version is specified.
 
     .EXAMPLE
         Install-AITool -Name Claude
@@ -30,6 +37,14 @@ function Install-AITool {
     .EXAMPLE
         Install-AITool -Name Aider -Scope LocalMachine
         Installs Aider system-wide (requires sudo/admin privileges).
+
+    .EXAMPLE
+        Install-AITool -Name Claude -Version 2.0.52
+        Installs a specific version of Claude Code. Prompts to uninstall other versions if found.
+
+    .EXAMPLE
+        Install-AITool -Name Aider -Version 0.45.0 -UninstallOtherVersions
+        Installs Aider version 0.45.0 and automatically uninstalls any other versions without prompting.
 
     .EXAMPLE
         Install-AITool -Name All
@@ -46,11 +61,17 @@ function Install-AITool {
         [string]$Name,
 
         [Parameter()]
+        [string]$Version,
+
+        [Parameter()]
         [switch]$SkipInitialization,
 
         [Parameter()]
         [ValidateSet('CurrentUser', 'LocalMachine')]
         [string]$Scope = 'CurrentUser',
+
+        [Parameter()]
+        [switch]$UninstallOtherVersions,
 
         [Parameter()]
         [switch]$SuppressAlreadyInstalledWarning
@@ -90,25 +111,129 @@ function Install-AITool {
 
             Write-Progress -Activity "Installing $currentToolName" -Status "Checking if $currentToolName is already installed" -PercentComplete 10
         Write-PSFMessage -Level Verbose -Message "Checking if $currentToolName is already installed"
+
+        # Check for existing installations and handle multiple versions
+        $existingInstallations = @()
         if (Test-Command -Command $tool.Command) {
-            # If SuppressAlreadyInstalledWarning is set, we're being called from Update-AITool
-            # so we should continue with installation/update instead of skipping
-            if (-not $SuppressAlreadyInstalledWarning) {
-                # Get version differently for PowerShell modules vs CLIs
-                if ($tool.IsWrapper) {
-                    $module = Get-Module -ListAvailable -Name $tool.Command | Sort-Object Version -Descending | Select-Object -First 1
-                    $version = $module.Version.ToString()
-                    $commandPath = $module.Path
-                } else {
-                    $version = & $tool.Command --version 2>&1 | Select-Object -First 1
-                    # Get the full path to the command
-                    $commandPath = (Get-Command $tool.Command -ErrorAction SilentlyContinue).Source
-                    if (-not $commandPath) {
-                        $commandPath = (Get-Command $tool.Command -ErrorAction SilentlyContinue).Path
+            # Get all installed versions
+            if ($tool.IsWrapper) {
+                $modules = Get-Module -ListAvailable -Name $tool.Command | Sort-Object Version -Descending
+                foreach ($module in $modules) {
+                    $existingInstallations += [PSCustomObject]@{
+                        Version = $module.Version.ToString()
+                        Path    = $module.Path
+                    }
+                }
+            } else {
+                # For CLI tools, we can only detect the currently active version
+                $installedVersion = & $tool.Command --version 2>&1 | Select-Object -First 1
+                $commandPath = (Get-Command $tool.Command -ErrorAction SilentlyContinue).Source
+                if (-not $commandPath) {
+                    $commandPath = (Get-Command $tool.Command -ErrorAction SilentlyContinue).Path
+                }
+                $existingInstallations += [PSCustomObject]@{
+                    Version = ($installedVersion -replace '^.*?(\d+\.\d+\.\d+).*$', '$1').Trim()
+                    Path    = $commandPath
+                }
+            }
+        }
+
+        # If a specific version is requested and other versions exist, handle them
+        if ($Version -and $existingInstallations.Count -gt 0) {
+            Write-PSFMessage -Level Verbose -Message "Version $Version requested. Checking for existing installations..."
+
+            # Check if the requested version is already installed
+            $requestedVersionInstalled = $existingInstallations | Where-Object { $_.Version -eq $Version }
+            $otherVersions = $existingInstallations | Where-Object { $_.Version -ne $Version }
+
+            if ($requestedVersionInstalled) {
+                Write-PSFMessage -Level Output -Message "$currentToolName version $Version is already installed"
+
+                if ($otherVersions.Count -gt 0) {
+                    Write-PSFMessage -Level Warning -Message "Found $($otherVersions.Count) other version(s) of $currentToolName installed:"
+                    foreach ($otherVer in $otherVersions) {
+                        Write-PSFMessage -Level Warning -Message "  - Version $($otherVer.Version) at $($otherVer.Path)"
+                    }
+
+                    # Prompt to uninstall other versions
+                    if (-not $UninstallOtherVersions) {
+                        $title = "Uninstall Other Versions"
+                        $message = "Do you want to uninstall the other version(s) of $currentToolName?"
+                        $yes = New-Object System.Management.Automation.Host.ChoiceDescription "&Yes", "Uninstall other versions"
+                        $no = New-Object System.Management.Automation.Host.ChoiceDescription "&No", "Keep other versions"
+                        $options = [System.Management.Automation.Host.ChoiceDescription[]]($yes, $no)
+                        $result = $Host.UI.PromptForChoice($title, $message, $options, 1)
+
+                        if ($result -eq 0) {
+                            $shouldUninstall = $true
+                        }
+                    } else {
+                        $shouldUninstall = $true
+                    }
+
+                    if ($shouldUninstall) {
+                        Write-PSFMessage -Level Output -Message "Uninstalling other versions of $currentToolName..."
+                        try {
+                            Uninstall-AITool -Name $currentToolName -ErrorAction Stop
+                            Write-PSFMessage -Level Output -Message "Successfully uninstalled other versions"
+                        } catch {
+                            Write-PSFMessage -Level Warning -Message "Failed to uninstall other versions: $_"
+                        }
                     }
                 }
 
-                Write-PSFMessage -Level Output -Message "$currentToolName is already installed (version: $($version.Trim()))"
+                Write-Progress -Activity "Installing $currentToolName" -Completed
+
+                # Output existing installation details
+                [PSCustomObject]@{
+                    PSTypeName = 'AITools.InstallResult'
+                    Tool       = $currentToolName
+                    Result     = 'Success'
+                    Version    = $Version
+                    Path       = $requestedVersionInstalled.Path
+                    Installer  = 'Already Installed'
+                }
+                continue
+            } elseif ($otherVersions.Count -gt 0) {
+                Write-PSFMessage -Level Warning -Message "Found $($otherVersions.Count) different version(s) of $currentToolName installed:"
+                foreach ($otherVer in $otherVersions) {
+                    Write-PSFMessage -Level Warning -Message "  - Version $($otherVer.Version) at $($otherVer.Path)"
+                }
+
+                # Prompt to uninstall other versions before installing the requested version
+                if (-not $UninstallOtherVersions) {
+                    $title = "Uninstall Existing Versions"
+                    $message = "Do you want to uninstall the existing version(s) before installing version $Version?"
+                    $yes = New-Object System.Management.Automation.Host.ChoiceDescription "&Yes", "Uninstall existing versions"
+                    $no = New-Object System.Management.Automation.Host.ChoiceDescription "&No", "Keep existing versions (may cause conflicts)"
+                    $options = [System.Management.Automation.Host.ChoiceDescription[]]($yes, $no)
+                    $result = $Host.UI.PromptForChoice($title, $message, $options, 0)
+
+                    if ($result -eq 0) {
+                        $shouldUninstall = $true
+                    }
+                } else {
+                    $shouldUninstall = $true
+                }
+
+                if ($shouldUninstall) {
+                    Write-PSFMessage -Level Output -Message "Uninstalling existing versions of $currentToolName..."
+                    try {
+                        Uninstall-AITool -Name $currentToolName -ErrorAction Stop
+                        Write-PSFMessage -Level Output -Message "Successfully uninstalled existing versions"
+                    } catch {
+                        Write-PSFMessage -Level Warning -Message "Failed to uninstall existing versions: $_"
+                    }
+                }
+            }
+        } elseif ($existingInstallations.Count -gt 0 -and -not $Version) {
+            # No specific version requested, handle existing installation normally
+            # If SuppressAlreadyInstalledWarning is set, we're being called from Update-AITool
+            # so we should continue with installation/update instead of skipping
+            if (-not $SuppressAlreadyInstalledWarning) {
+                $latestInstalled = $existingInstallations | Select-Object -First 1
+
+                Write-PSFMessage -Level Output -Message "$currentToolName is already installed (version: $($latestInstalled.Version))"
                 Write-PSFMessage -Level Verbose -Message "Skipping installation. To reinstall, first run: Uninstall-AITool -Name $currentToolName"
 
                 Write-Progress -Activity "Installing $currentToolName" -Completed
@@ -118,8 +243,8 @@ function Install-AITool {
                     PSTypeName = 'AITools.InstallResult'
                     Tool       = $currentToolName
                     Result     = 'Success'
-                    Version    = ($version -replace '^.*?(\d+\.\d+\.\d+).*$', '$1').Trim()
-                    Path       = $commandPath
+                    Version    = $latestInstalled.Version
+                    Path       = $latestInstalled.Path
                     Installer  = 'Already Installed'
                 }
                 continue
@@ -146,6 +271,43 @@ function Install-AITool {
         # Ensure $installCmd is an array (convert single command to array)
         if ($installCmd -isnot [array]) {
             $installCmd = @($installCmd)
+        }
+
+        # Modify install commands to include specific version if requested
+        if ($Version) {
+            Write-PSFMessage -Level Verbose -Message "Modifying installation command for version $Version"
+            $modifiedCmd = @()
+            foreach ($cmd in $installCmd) {
+                # Handle different package managers and version syntax
+                if ($cmd -match '^winget install') {
+                    # winget: winget install <package> --version <version>
+                    $modifiedCmd += "$cmd --version $Version"
+                } elseif ($cmd -match '^npm install -g (.+)') {
+                    # npm: npm install -g <package>@<version>
+                    $packageName = $Matches[1]
+                    $modifiedCmd += "npm install -g ${packageName}@${Version}"
+                } elseif ($cmd -match '^pipx install (.+)') {
+                    # pipx: pipx install <package>==<version>
+                    $packageName = $Matches[1]
+                    $modifiedCmd += "pipx install ${packageName}==${Version}"
+                } elseif ($cmd -match '^Install-Module -Name (\S+)(.*)') {
+                    # PowerShell module: Install-Module -Name <module> -RequiredVersion <version>
+                    $moduleName = $Matches[1]
+                    $otherParams = $Matches[2]
+                    $modifiedCmd += "Install-Module -Name $moduleName -RequiredVersion $Version$otherParams"
+                } elseif ($cmd -match '^brew install') {
+                    # Homebrew: brew install <package>@<version>
+                    # Note: Not all packages support versioned installation in Homebrew
+                    Write-PSFMessage -Level Warning -Message "Homebrew version-specific installation may not be supported for all packages"
+                    $modifiedCmd += "$cmd@$Version"
+                } else {
+                    # Unknown package manager or custom command - use as-is and warn
+                    Write-PSFMessage -Level Warning -Message "Cannot automatically add version to command: $cmd. Using original command."
+                    $modifiedCmd += $cmd
+                }
+            }
+            $installCmd = $modifiedCmd
+            Write-PSFMessage -Level Verbose -Message "Modified command(s): $($installCmd -join ' ; ')"
         }
 
         # For Claude on Windows with winget, check if winget is available and fallback to PowerShell installer if not
