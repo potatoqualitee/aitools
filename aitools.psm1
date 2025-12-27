@@ -70,7 +70,7 @@ $script:ToolDefinitions = @{
             MacOS   = 'curl -fsSL https://claude.ai/install.sh | bash'
         }
         UninstallCommands = @{
-            Windows = 'winget uninstall --id=Anthropic.ClaudeCode -e --accept-source-agreements --accept-package-agreements'
+            Windows = 'winget uninstall --id=Anthropic.ClaudeCode -e'
             Linux   = 'claude uninstall'
             MacOS   = 'claude uninstall'
         }
@@ -209,7 +209,7 @@ $script:ToolDefinitions = @{
             MacOS   = 'brew install ollama'
         }
         UninstallCommands = @{
-            Windows = 'winget uninstall ollama.ollama'
+            Windows = 'winget uninstall --id=ollama.ollama -e'
             Linux   = $null
             MacOS   = 'brew uninstall ollama'
         }
