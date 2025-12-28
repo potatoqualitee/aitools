@@ -21,6 +21,10 @@ function Uninstall-AITool {
         Uninstall-AITool -Name Aider -Force
         Uninstalls Aider without confirmation.
 
+    .EXAMPLE
+        Uninstall-AITool -Name Gemini -Scope LocalMachine
+        Uninstalls Gemini CLI from system-wide installation (requires sudo on Linux).
+
     .OUTPUTS
         AITools.UninstallResult
         An object containing Tool name, Result (Success/Failed), and Uninstaller command used.
@@ -32,7 +36,11 @@ function Uninstall-AITool {
         [string]$Name,
 
         [Parameter()]
-        [switch]$Force
+        [switch]$Force,
+
+        [Parameter()]
+        [ValidateSet('CurrentUser', 'LocalMachine')]
+        [string]$Scope = 'CurrentUser'
     )
 
     begin {
@@ -172,59 +180,72 @@ function Uninstall-AITool {
                 }
             } else {
                 # Use Start-Process for external executables
-                # Split the command into executable and arguments
-                $cmdParts = $uninstallCmd -split ' ', 2
-                $executable = $cmdParts[0]
-                $arguments = if ($cmdParts.Count -gt 1) { $cmdParts[1] } else { '' }
+                # On Linux with LocalMachine scope, use Invoke-SudoCommand for proper sudo handling
+                if ($os -eq 'Linux' -and $Scope -eq 'LocalMachine') {
+                    Write-PSFMessage -Level Verbose -Message "Using Invoke-SudoCommand for LocalMachine scope uninstall"
+                    $result = Invoke-SudoCommand -Command $uninstallCmd -Scope $Scope -Description "uninstalling $Name"
+                    $exitCode = $result.ExitCode
+                    $stdout = $result.Output
+                    $stderr = ''
 
-            Write-PSFMessage -Level Verbose -Message "Executable: $executable"
-            Write-PSFMessage -Level Verbose -Message "Arguments: $arguments"
+                    if ($stdout) {
+                        $stdout -split "`n" | ForEach-Object { Write-PSFMessage -Level Verbose -Message $_ }
+                    }
+                } else {
+                    # Split the command into executable and arguments
+                    $cmdParts = $uninstallCmd -split ' ', 2
+                    $executable = $cmdParts[0]
+                    $arguments = if ($cmdParts.Count -gt 1) { $cmdParts[1] } else { '' }
 
-            # Resolve the full path to the executable to avoid PATH issues with UseShellExecute = $false
-            $executablePath = (Get-Command $executable -ErrorAction SilentlyContinue).Source
-            if (-not $executablePath) {
-                $executablePath = (Get-Command $executable -ErrorAction SilentlyContinue).Path
-            }
-            if (-not $executablePath) {
-                # If we still can't find it, use the executable as-is and hope for the best
-                $executablePath = $executable
-            }
+                    Write-PSFMessage -Level Verbose -Message "Executable: $executable"
+                    Write-PSFMessage -Level Verbose -Message "Arguments: $arguments"
 
-            Write-PSFMessage -Level Verbose -Message "Resolved path: $executablePath"
+                    # Resolve the full path to the executable to avoid PATH issues with UseShellExecute = $false
+                    $executablePath = (Get-Command $executable -ErrorAction SilentlyContinue).Source
+                    if (-not $executablePath) {
+                        $executablePath = (Get-Command $executable -ErrorAction SilentlyContinue).Path
+                    }
+                    if (-not $executablePath) {
+                        # If we still can't find it, use the executable as-is and hope for the best
+                        $executablePath = $executable
+                    }
 
-            # If the resolved path is a .ps1 or .cmd file, we need to invoke it through the shell
-            # On Windows, npm resolves to npm.ps1 or npm.cmd which can't be directly executed
-            $psi = New-Object System.Diagnostics.ProcessStartInfo
-            if ($executablePath -match '\.(ps1|cmd)$') {
-                Write-PSFMessage -Level Verbose -Message "Detected shell script, using cmd.exe wrapper"
-                $psi.FileName = "cmd.exe"
-                $psi.Arguments = "/c `"$executable $arguments`""
-            } else {
-                $psi.FileName = $executablePath
-                $psi.Arguments = $arguments
-            }
-            $psi.RedirectStandardOutput = $true
-            $psi.RedirectStandardError = $true
-            $psi.UseShellExecute = $false
-            $psi.CreateNoWindow = $true
+                    Write-PSFMessage -Level Verbose -Message "Resolved path: $executablePath"
 
-                $process = New-Object System.Diagnostics.Process
-                $process.StartInfo = $psi
-                $process.Start() | Out-Null
+                    # If the resolved path is a .ps1 or .cmd file, we need to invoke it through the shell
+                    # On Windows, npm resolves to npm.ps1 or npm.cmd which can't be directly executed
+                    $psi = New-Object System.Diagnostics.ProcessStartInfo
+                    if ($executablePath -match '\.(ps1|cmd)$') {
+                        Write-PSFMessage -Level Verbose -Message "Detected shell script, using cmd.exe wrapper"
+                        $psi.FileName = "cmd.exe"
+                        $psi.Arguments = "/c `"$executable $arguments`""
+                    } else {
+                        $psi.FileName = $executablePath
+                        $psi.Arguments = $arguments
+                    }
+                    $psi.RedirectStandardOutput = $true
+                    $psi.RedirectStandardError = $true
+                    $psi.UseShellExecute = $false
+                    $psi.CreateNoWindow = $true
 
-                $stdout = $process.StandardOutput.ReadToEnd()
-                $stderr = $process.StandardError.ReadToEnd()
-                $process.WaitForExit()
+                    $process = New-Object System.Diagnostics.Process
+                    $process.StartInfo = $psi
+                    $process.Start() | Out-Null
 
-                # Send output to verbose
-                if ($stdout) {
-                    $stdout -split "`n" | ForEach-Object { Write-PSFMessage -Level Verbose -Message $_ }
+                    $stdout = $process.StandardOutput.ReadToEnd()
+                    $stderr = $process.StandardError.ReadToEnd()
+                    $process.WaitForExit()
+
+                    # Send output to verbose
+                    if ($stdout) {
+                        $stdout -split "`n" | ForEach-Object { Write-PSFMessage -Level Verbose -Message $_ }
+                    }
+                    if ($stderr) {
+                        $stderr -split "`n" | ForEach-Object { Write-PSFMessage -Level Verbose -Message $_ }
+                    }
+
+                    $exitCode = $process.ExitCode
                 }
-                if ($stderr) {
-                    $stderr -split "`n" | ForEach-Object { Write-PSFMessage -Level Verbose -Message $_ }
-                }
-
-                $exitCode = $process.ExitCode
             }
 
             Write-PSFMessage -Level Verbose -Message "Uninstall command completed with exit code: $exitCode"

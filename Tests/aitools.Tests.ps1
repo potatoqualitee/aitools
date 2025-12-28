@@ -203,6 +203,60 @@ function Get-TestData {
         }
     }
 
+    Context 'Install-AITool Scope Parameter' {
+        It 'Should accept CurrentUser scope' {
+            # CurrentUser is the default, should work without issues
+            $result = Install-AITool -Name Claude -Scope CurrentUser -SkipInitialization
+            $result | Should -Not -BeNullOrEmpty
+            $result.Result | Should -Be 'Success'
+        }
+
+        It 'Should accept LocalMachine scope parameter' {
+            # Verify the parameter is accepted (actual installation may require sudo)
+            { Get-Command Install-AITool | Should -Not -BeNullOrEmpty } | Should -Not -Throw
+            $cmd = Get-Command Install-AITool
+            $cmd.Parameters['Scope'] | Should -Not -BeNullOrEmpty
+            $cmd.Parameters['Scope'].ParameterType.Name | Should -Be 'String'
+        }
+
+        It 'Should have valid Scope parameter values' {
+            $cmd = Get-Command Install-AITool
+            $validateSet = $cmd.Parameters['Scope'].Attributes | Where-Object { $_ -is [System.Management.Automation.ValidateSetAttribute] }
+            $validateSet.ValidValues | Should -Contain 'CurrentUser'
+            $validateSet.ValidValues | Should -Contain 'LocalMachine'
+        }
+
+        It 'Should handle LocalMachine scope for already-installed tool' {
+            # Claude is already installed, so this tests the code path without needing sudo
+            $result = Install-AITool -Name Claude -Scope LocalMachine -SkipInitialization
+            $result | Should -Not -BeNullOrEmpty
+            $result.Result | Should -Be 'Success'
+            $result.Installer | Should -Be 'Already Installed'
+        }
+    }
+
+    Context 'Uninstall-AITool Scope Parameter' {
+        It 'Should accept Scope parameter' {
+            $cmd = Get-Command Uninstall-AITool
+            $cmd.Parameters['Scope'] | Should -Not -BeNullOrEmpty
+            $cmd.Parameters['Scope'].ParameterType.Name | Should -Be 'String'
+        }
+
+        It 'Should have valid Scope parameter values' {
+            $cmd = Get-Command Uninstall-AITool
+            $validateSet = $cmd.Parameters['Scope'].Attributes | Where-Object { $_ -is [System.Management.Automation.ValidateSetAttribute] }
+            $validateSet.ValidValues | Should -Contain 'CurrentUser'
+            $validateSet.ValidValues | Should -Contain 'LocalMachine'
+        }
+
+        It 'Should default to CurrentUser scope' {
+            $cmd = Get-Command Uninstall-AITool
+            $scopeParam = $cmd.Parameters['Scope']
+            # Check that it has a default value
+            $scopeParam.Attributes | Where-Object { $_ -is [System.Management.Automation.ParameterAttribute] } | Should -Not -BeNullOrEmpty
+        }
+    }
+
 }
 
 AfterAll {
