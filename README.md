@@ -84,6 +84,25 @@ Install-AITool -Name Gemini, Aider
 Install-AITool -Name All
 ```
 
+### Installation Scope (Linux)
+
+By default, tools install to user-local directories (`CurrentUser` scope) without requiring elevated privileges. On Linux, you can optionally install system-wide:
+
+```powershell
+# User-local installation (default, no sudo required)
+Install-AITool -Name Aider -Scope CurrentUser
+
+# System-wide installation (requires sudo on Linux)
+Install-AITool -Name Gemini -Scope LocalMachine
+```
+
+When using `-Scope LocalMachine` on Linux:
+- You'll be prompted for your sudo password if needed
+- Prerequisites (Node.js, pipx) are installed via apt-get
+- Tools are available to all users on the system
+
+On macOS, Homebrew handles installations without requiring sudo, so both scopes work without elevated privileges.
+
 ## Set your default
 
 ```powershell

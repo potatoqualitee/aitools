@@ -336,34 +336,22 @@ function Install-AITool {
                     # Choose installation method based on Scope
                     if ($Scope -eq 'LocalMachine') {
                         Write-PSFMessage -Level Verbose -Message "Installing pipx system-wide (requires sudo)..."
-                        $pipxInstallCmd = 'sudo apt-get update && sudo apt-get install -y pipx && pipx ensurepath'
+                        $pipxInstallCmd = 'apt-get update && apt-get install -y pipx && pipx ensurepath'
                     } else {
                         Write-PSFMessage -Level Verbose -Message "Installing pipx for current user (no sudo required)..."
                         $pipxInstallCmd = 'python3 -m pip install --user pipx && python3 -m pipx ensurepath'
                     }
 
                     try {
-                        $psi = New-Object System.Diagnostics.ProcessStartInfo
-                        $psi.FileName = '/bin/bash'
-                        $psi.Arguments = "-c `"$pipxInstallCmd`""
-                        $psi.RedirectStandardOutput = $true
-                        $psi.RedirectStandardError = $true
-                        $psi.UseShellExecute = $false
-                        $psi.CreateNoWindow = $true
+                        # Use Invoke-SudoCommand which handles sudo validation and prompting
+                        $result = Invoke-SudoCommand -Command $pipxInstallCmd -Scope $Scope -Description 'installing pipx'
 
-                        $process = New-Object System.Diagnostics.Process
-                        $process.StartInfo = $psi
-                        $process.Start() | Out-Null
-                        $stdout = $process.StandardOutput.ReadToEnd()
-                        $stderr = $process.StandardError.ReadToEnd()
-                        $process.WaitForExit()
-
-                        if ($process.ExitCode -ne 0) {
+                        if (-not $result.Success) {
                                 Write-Progress -Activity "Installing $currentToolName" -Completed
                             if ($Scope -eq 'LocalMachine') {
-                                Stop-PSFFunction -Message "pipx installation failed. Please install pipx manually: sudo apt-get install pipx" -EnableException $true
+                                Stop-PSFFunction -Message "pipx installation failed. Please install pipx manually: sudo apt-get install pipx`n$($result.Output)" -EnableException $true
                             } else {
-                                Stop-PSFFunction -Message "pipx installation failed. Please install pipx manually: python3 -m pip install --user pipx" -EnableException $true
+                                Stop-PSFFunction -Message "pipx installation failed. Please install pipx manually: python3 -m pip install --user pipx`n$($result.Output)" -EnableException $true
                             }
                             return
                         }
@@ -419,13 +407,29 @@ function Install-AITool {
                     # Choose installation method based on Scope
                     if ($Scope -eq 'LocalMachine') {
                         Write-PSFMessage -Level Verbose -Message "Installing Node.js system-wide (requires sudo)..."
-                        $nodeInstallCmd = 'curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash - && sudo apt-get install -y nodejs'
+                        # Note: The nodesource script itself needs sudo, so we handle this specially
+                        # First download the setup script, then run it with sudo, then install nodejs
+                        $nodeInstallCmd = 'curl -fsSL https://deb.nodesource.com/setup_lts.x -o /tmp/nodesource_setup.sh && sudo -E bash /tmp/nodesource_setup.sh && sudo apt-get install -y nodejs && rm -f /tmp/nodesource_setup.sh'
                     } else {
                         Write-PSFMessage -Level Verbose -Message "Installing Node.js for current user using nvm (no sudo required)..."
                         $nodeInstallCmd = 'curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash && export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" && nvm install --lts && nvm use --lts'
                     }
 
                     try {
+                        if ($Scope -eq 'LocalMachine') {
+                            # For LocalMachine, validate sudo access first
+                            if (Test-SudoRequired -Scope $Scope) {
+                                Write-PSFMessage -Level Host -Message "Elevated privileges required for installing Node.js. You may be prompted for your password."
+                                $sudoCheck = & bash -c 'sudo -v 2>&1; echo "EXIT:$?"'
+                                $exitLine = $sudoCheck | Select-Object -Last 1
+                                if ($exitLine -ne 'EXIT:0') {
+                                    Write-Progress -Activity "Installing $currentToolName" -Completed
+                                    Stop-PSFFunction -Message "Failed to obtain sudo privileges. Please ensure you have sudo access and try again." -EnableException $true
+                                    return
+                                }
+                            }
+                        }
+
                         $psi = New-Object System.Diagnostics.ProcessStartInfo
                         $psi.FileName = '/bin/bash'
                         $psi.Arguments = "-c `"$nodeInstallCmd`""
@@ -444,9 +448,9 @@ function Install-AITool {
                         if ($process.ExitCode -ne 0) {
                                 Write-Progress -Activity "Installing $currentToolName" -Completed
                             if ($Scope -eq 'LocalMachine') {
-                                Stop-PSFFunction -Message "Node.js installation failed. Please install Node.js manually: sudo apt-get install nodejs" -EnableException $true
+                                Stop-PSFFunction -Message "Node.js installation failed. Please install Node.js manually: sudo apt-get install nodejs`n$stdout`n$stderr" -EnableException $true
                             } else {
-                                Stop-PSFFunction -Message "Node.js installation failed. Please install Node.js manually using nvm or from https://nodejs.org/" -EnableException $true
+                                Stop-PSFFunction -Message "Node.js installation failed. Please install Node.js manually using nvm or from https://nodejs.org/`n$stdout`n$stderr" -EnableException $true
                             }
                             return
                         }
