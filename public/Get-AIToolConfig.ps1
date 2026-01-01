@@ -23,8 +23,8 @@ function Get-AIToolConfig {
     )
 
     if ($Tool) {
-        if ($Tool -eq 'All') {
-            Write-PSFMessage -Level Verbose -Message "Tool is 'All' - retrieving configuration for all tools"
+        if ($Tool -eq 'All' -or $Tool -eq '*') {
+            Write-PSFMessage -Level Verbose -Message "Tool is '$Tool' - retrieving configuration for all tools"
             Get-PSFConfig -FullName "AITools.*"
         } else {
             Get-PSFConfig -FullName "AITools.$Tool.*"

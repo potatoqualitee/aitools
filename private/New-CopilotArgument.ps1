@@ -5,6 +5,7 @@ function New-CopilotArgument {
         [string]$Message,
         [string]$Model,
         [bool]$UsePermissionBypass,
+        [bool]$IgnoreInstructions,
         [string]$WorkingDirectory,
         [string]$PromptFilePath,
         [string[]]$ContextFilePaths
@@ -16,6 +17,11 @@ function New-CopilotArgument {
     # Always add --allow-all-tools for non-interactive mode
     Write-PSFMessage -Level Debug -Message "Adding allow-all-tools flag"
     $arguments += '--allow-all-tools'
+
+    if ($IgnoreInstructions) {
+        Write-PSFMessage -Level Debug -Message "Adding no-custom-instructions flag to bypass AGENTS.md loading"
+        $arguments += '--no-custom-instructions'
+    }
 
     # Add directory access first (must come before other flags for proper permission handling)
     # Collect unique directories to avoid duplicates

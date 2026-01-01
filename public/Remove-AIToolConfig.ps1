@@ -23,6 +23,9 @@ function Remove-AIToolConfig {
     .PARAMETER ReasoningEffort
         Remove the ReasoningEffort configuration setting.
 
+    .PARAMETER IgnoreInstructions
+        Remove the IgnoreInstructions configuration setting.
+
     .PARAMETER All
         Remove all configuration settings for the specified tool (equivalent to Clear-AIToolConfig).
 
@@ -45,6 +48,10 @@ function Remove-AIToolConfig {
     .EXAMPLE
         Remove-AIToolConfig -Tool Codex -All
         Removes all configuration settings for Codex.
+
+    .EXAMPLE
+        Remove-AIToolConfig -Tool Claude -IgnoreInstructions
+        Removes the IgnoreInstructions configuration for Claude.
     #>
     [CmdletBinding(SupportsShouldProcess)]
     param(
@@ -54,6 +61,7 @@ function Remove-AIToolConfig {
         [switch]$PermissionBypass,
         [switch]$Model,
         [switch]$ReasoningEffort,
+        [switch]$IgnoreInstructions,
         [switch]$All
     )
 
@@ -141,9 +149,23 @@ function Remove-AIToolConfig {
             }
         }
 
+        if ($IgnoreInstructions) {
+            $configName = "AITools.$toolName.IgnoreInstructions"
+            if ($PSCmdlet.ShouldProcess($configName, "Remove configuration")) {
+                $config = Get-PSFConfig -FullName $configName
+                if ($config) {
+                    Unregister-PSFConfig -FullName $configName
+                    Write-PSFMessage -Level Verbose -Message "Removed IgnoreInstructions configuration for $toolName"
+                    $settingsRemoved = $true
+                } else {
+                    Write-PSFMessage -Level Warning -Message "IgnoreInstructions configuration not found for $toolName"
+                }
+            }
+        }
+
         # If no specific settings were specified, show warning
         if (-not $settingsRemoved -and -not $All) {
-            Write-PSFMessage -Level Warning -Message "No configuration settings specified for removal. Use -EditMode, -PermissionBypass, -Model, -ReasoningEffort, or -All"
+            Write-PSFMessage -Level Warning -Message "No configuration settings specified for removal. Use -EditMode, -PermissionBypass, -Model, -ReasoningEffort, -IgnoreInstructions, or -All"
         } elseif ($settingsRemoved) {
             Write-PSFMessage -Level Host -Message "Configuration settings removed for $toolName"
         }

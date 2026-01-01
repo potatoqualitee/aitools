@@ -5,6 +5,7 @@ function New-ClaudeArgument {
         [string]$Message,
         [string]$Model,
         [bool]$UsePermissionBypass,
+        [bool]$IgnoreInstructions,
         [ValidateSet('low', 'medium', 'high')]
         [string]$ReasoningEffort
     )
@@ -19,6 +20,11 @@ function New-ClaudeArgument {
     if ($UsePermissionBypass) {
         Write-PSFMessage -Level Debug -Message "Adding permission bypass flag"
         $arguments += '--dangerously-skip-permissions'
+    }
+
+    if ($IgnoreInstructions) {
+        Write-PSFMessage -Level Debug -Message "Adding minimal system prompt to bypass CLAUDE.md loading"
+        $arguments += '--system-prompt', 'You are a helpful AI assistant. Complete the requested task.'
     }
 
     if ($PSCmdlet.MyInvocation.BoundParameters['Verbose']) {

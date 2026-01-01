@@ -151,6 +151,17 @@ function Invoke-AITool {
         "insufficient", "billing", "payment". A lower threshold is used because these errors
         typically indicate account-wide issues that won't resolve by retrying other files.
 
+    .PARAMETER IgnoreInstructions
+        When enabled, the AI tool will ignore instruction files like CLAUDE.md, AGENTS.md, and other
+        custom instruction files that are normally auto-loaded. This is useful when you want to run
+        the tool without project-specific or user-specific instructions.
+
+        For Claude: Uses an empty --system-prompt to bypass CLAUDE.md loading
+        For Copilot: Uses --no-custom-instructions to bypass AGENTS.md loading
+        For other tools: Behavior varies based on tool capabilities
+
+        This parameter overrides the configured default from Set-AIToolConfig.
+
     .EXAMPLE
         Get-ChildItem *.Tests.ps1 | Invoke-AITool -Prompt "Refactor from Pester v4 to v5"
 
@@ -276,6 +287,14 @@ function Invoke-AITool {
     .EXAMPLE
         Get-ChildItem *.fr.md | Invoke-AITool -Prompt "Review" -ContextFilter { $_ -replace '\.fr\.md$', '.md' } -WhatIf
         Preview which dynamic context files would be added without actually processing.
+
+    .EXAMPLE
+        Invoke-AITool -Path "script.ps1" -Prompt "Review this code" -IgnoreInstructions
+        Processes the file without loading CLAUDE.md, AGENTS.md, or other instruction files.
+
+    .EXAMPLE
+        Get-ChildItem *.ps1 | Invoke-AITool -Prompt "Fix bugs" -Tool Claude -IgnoreInstructions
+        Processes all PowerShell files with Claude, bypassing any project or user instructions.
     #>
     [CmdletBinding(SupportsShouldProcess)]
     param(
@@ -337,7 +356,9 @@ function Invoke-AITool {
         [int]$MaxErrors = 10,
         [Parameter()]
         [ValidateRange(1, 100)]
-        [int]$MaxTokenErrors = 3
+        [int]$MaxTokenErrors = 3,
+        [Parameter()]
+        [switch]$IgnoreInstructions
     )
 
     begin {
@@ -582,8 +603,8 @@ function Invoke-AITool {
 
         # Handle "All" tool selection - get all available tools
         $toolsToRun = @()
-        if ($Tool -eq 'All') {
-            Write-PSFMessage -Level Verbose -Message "Tool is 'All' - will run all available tools"
+        if ($Tool -eq 'All' -or $Tool -eq '*') {
+            Write-PSFMessage -Level Verbose -Message "Tool is '$Tool' - will run all available tools"
             # Get all tool names sorted by priority
             $toolsToRun = $script:ToolDefinitions.GetEnumerator() |
                 Sort-Object { $_.Value.Priority } |
@@ -729,11 +750,18 @@ function Invoke-AITool {
             $configuredReasoningEffort = Get-PSFConfigValue -FullName "AITools.$currentTool.ReasoningEffort" -Fallback $null
             Write-PSFMessage -Level Verbose -Message "Configured reasoning effort: $configuredReasoningEffort"
 
+            $configuredIgnoreInstructions = Get-PSFConfigValue -FullName "AITools.$currentTool.IgnoreInstructions" -Fallback $false
+            Write-PSFMessage -Level Verbose -Message "Configured ignore instructions: $configuredIgnoreInstructions"
+
             $modelToUse = if ($Model) { $Model } else { $configuredModel }
             Write-PSFMessage -Level Verbose -Message "Model to use: $modelToUse"
 
             $reasoningEffortToUse = if ($ReasoningEffort) { $ReasoningEffort } else { $configuredReasoningEffort }
             Write-PSFMessage -Level Verbose -Message "Reasoning effort to use: $reasoningEffortToUse"
+
+            # Command-line parameter overrides config (if switch is present, use it; otherwise use config)
+            $ignoreInstructionsToUse = if ($PSBoundParameters.ContainsKey('IgnoreInstructions')) { $IgnoreInstructions.IsPresent } else { $configuredIgnoreInstructions }
+            Write-PSFMessage -Level Verbose -Message "Ignore instructions to use: $ignoreInstructionsToUse"
 
             if ($filesToProcess.Count -eq 0) {
                 Write-PSFMessage -Level Verbose -Message "No files specified - entering chat-only mode"
@@ -771,6 +799,7 @@ function Invoke-AITool {
                         Message             = $fullPrompt
                         Model               = $modelToUse
                         UsePermissionBypass = $permissionBypass
+                        IgnoreInstructions  = $ignoreInstructionsToUse
                         Verbose             = $VerbosePreference
                         Debug               = $DebugPreference
                     }
@@ -809,6 +838,7 @@ function Invoke-AITool {
                         Message             = $fullPrompt
                         Model               = $modelToUse
                         UsePermissionBypass = $permissionBypass
+                        IgnoreInstructions  = $ignoreInstructionsToUse
                         WorkingDirectory    = (Get-Location).Path
                         PromptFilePath      = $promptFilePath
                         ContextFilePaths    = $contextFiles
@@ -1801,6 +1831,7 @@ function Invoke-AITool {
                         Message             = $promptText
                         Model               = $modelToUse
                         UsePermissionBypass = $permissionBypass
+                        IgnoreInstructions  = $ignoreInstructionsToUse
                         Verbose             = $VerbosePreference
                         Debug               = $DebugPreference
                     }
@@ -1842,6 +1873,7 @@ function Invoke-AITool {
                         Message             = $promptText
                         Model               = $modelToUse
                         UsePermissionBypass = $permissionBypass
+                        IgnoreInstructions  = $ignoreInstructionsToUse
                         WorkingDirectory    = $targetDirectory
                         PromptFilePath      = $promptFilePath
                         ContextFilePaths    = $contextFiles

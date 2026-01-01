@@ -38,8 +38,8 @@ function Initialize-AITool {
 
         # Handle "All" tool selection
         $toolsToInitialize = @()
-        if ($Tool -eq 'All') {
-            Write-PSFMessage -Level Verbose -Message "Tool is 'All' - will initialize all installed tools"
+        if ($Tool -eq 'All' -or $Tool -eq '*') {
+            Write-PSFMessage -Level Verbose -Message "Tool is '$Tool' - will initialize all installed tools"
             $toolsToInitialize = $script:ToolDefinitions.GetEnumerator() |
                 Where-Object { Test-Command -Command $_.Value.Command } |
                 Sort-Object { $_.Value.Priority } |

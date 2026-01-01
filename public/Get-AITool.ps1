@@ -38,7 +38,7 @@ function Get-AITool {
 
         # Determine which tools to check
         $toolsToCheck = @()
-        if ($Tool -eq 'All' -or [string]::IsNullOrWhiteSpace($Tool)) {
+        if ($Tool -eq 'All' -or $Tool -eq '*' -or [string]::IsNullOrWhiteSpace($Tool)) {
             Write-PSFMessage -Level Verbose -Message "Checking all available tools"
             $toolsToCheck = $script:ToolDefinitions.Keys | Sort-Object { $script:ToolDefinitions[$_].Priority }
         } else {

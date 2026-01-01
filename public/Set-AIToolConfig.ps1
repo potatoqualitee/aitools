@@ -26,6 +26,15 @@ function Set-AIToolConfig {
         Directory for Aider output files (Aider only). Defaults to a temp directory that gets cleaned up.
         Set this to a custom path if you want to preserve Aider's history and metadata files.
 
+    .PARAMETER IgnoreInstructions
+        When enabled, the AI tool will ignore instruction files like CLAUDE.md, AGENTS.md, and other
+        custom instruction files that are normally auto-loaded. This is useful when you want to run
+        the tool without project-specific or user-specific instructions.
+
+        For Claude: Uses an empty --system-prompt to bypass CLAUDE.md loading
+        For Copilot: Uses --no-custom-instructions to bypass AGENTS.md loading
+        For other tools: Behavior varies based on tool capabilities
+
     .EXAMPLE
         Set-AIToolConfig -Tool Aider -EditMode Diff
 
@@ -44,6 +53,14 @@ function Set-AIToolConfig {
     .EXAMPLE
         Set-AIToolConfig -Tool All -PermissionBypass
         Enables permission bypass for all AI tools.
+
+    .EXAMPLE
+        Set-AIToolConfig -Tool Claude -IgnoreInstructions
+        Configures Claude to ignore CLAUDE.md and other instruction files.
+
+    .EXAMPLE
+        Set-AIToolConfig -Tool All -IgnoreInstructions
+        Enables instruction bypass for all AI tools that support it.
     #>
     [CmdletBinding()]
     param(
@@ -55,13 +72,14 @@ function Set-AIToolConfig {
         [string]$Model,
         [ValidateSet('low', 'medium', 'high')]
         [string]$ReasoningEffort,
-        [string]$AiderOutputDir
+        [string]$AiderOutputDir,
+        [switch]$IgnoreInstructions
     )
 
-    # Handle "All" tool selection
+    # Handle "All" or "*" tool selection
     $toolsToConfig = @()
-    if ($Tool -eq 'All') {
-        Write-PSFMessage -Level Verbose -Message "Tool is 'All' - will configure all available tools"
+    if ($Tool -eq 'All' -or $Tool -eq '*') {
+        Write-PSFMessage -Level Verbose -Message "Tool is '$Tool' - will configure all available tools"
         $toolsToConfig = $script:ToolDefinitions.Keys
         Write-PSFMessage -Level Verbose -Message "Tools to configure: $($toolsToConfig -join ', ')"
     } else {
@@ -101,6 +119,12 @@ function Set-AIToolConfig {
             Write-PSFMessage -Level Verbose -Message "ReasoningEffort parameter provided: $ReasoningEffort"
             Set-PSFConfig -FullName "AITools.$currentTool.ReasoningEffort" -Value $ReasoningEffort -PassThru | Register-PSFConfig
             Write-PSFMessage -Level Verbose -Message "Set $currentTool reasoning effort to: $ReasoningEffort"
+        }
+
+        if ($PSBoundParameters.ContainsKey('IgnoreInstructions')) {
+            Write-PSFMessage -Level Verbose -Message "IgnoreInstructions parameter provided: $($IgnoreInstructions.IsPresent)"
+            Set-PSFConfig -FullName "AITools.$currentTool.IgnoreInstructions" -Value $IgnoreInstructions.IsPresent -PassThru | Register-PSFConfig
+            Write-PSFMessage -Level Verbose -Message "Set $currentTool ignore instructions to: $($IgnoreInstructions.IsPresent)"
         }
 
         if ($AiderOutputDir) {
