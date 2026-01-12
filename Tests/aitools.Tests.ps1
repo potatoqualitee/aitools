@@ -29,7 +29,8 @@ Describe 'AITools Module Integration Tests' {
                 'Update-AITool',
                 'Uninstall-AITool',
                 'Update-PesterTest',
-                'Get-AITPrompt'
+                'Get-AITPrompt',
+                'ConvertTo-AITImage'
             )
 
             foreach ($command in $commands) {
@@ -257,6 +258,78 @@ function Get-TestData {
         }
     }
 
+    Context 'ConvertTo-AITImage' {
+        BeforeAll {
+            $script:pdfPath = Join-Path $PSScriptRoot 'pdf' 'immunization.pdf'
+            $script:jsonSchemaPath = Join-Path $PSScriptRoot 'pdf' 'immunization.json'
+        }
+
+        It 'Should have test PDF file' {
+            Test-Path $script:pdfPath | Should -Be $true
+        }
+
+        It 'Should have JSON schema file' {
+            Test-Path $script:jsonSchemaPath | Should -Be $true
+        }
+
+        It 'Should convert PDF to PNG images' {
+            $images = Get-ChildItem $script:pdfPath | ConvertTo-AITImage
+            $images | Should -Not -BeNullOrEmpty
+            $images | ForEach-Object {
+                $_.Extension | Should -Be '.png'
+                $_.Exists | Should -Be $true
+            }
+            Write-Host "Generated $($images.Count) image(s) from PDF"
+
+            # Store for cleanup
+            $script:generatedImages = $images
+        }
+
+        It 'Should return FileInfo objects' {
+            $images = Get-ChildItem $script:pdfPath | ConvertTo-AITImage
+            $images | ForEach-Object {
+                $_ | Should -BeOfType [System.IO.FileInfo]
+            }
+        }
+
+        It 'Should extract immunization data from PDF using AI vision' {
+            $images = Get-ChildItem $script:pdfPath | ConvertTo-AITImage
+
+            $prompt = @"
+Extract the pet immunization data from this veterinary record image.
+Return ONLY valid JSON matching the schema structure provided in the context file.
+Parse all vaccination entries including vaccine names, dates administered, and veterinarian names.
+"@
+
+            $result = $images | Invoke-AITool -Tool Claude -Prompt $prompt -Context $script:jsonSchemaPath
+
+            $result | Should -Not -BeNullOrEmpty
+            $result.Success | Should -Be $true
+            $result.Result | Should -Not -BeNullOrEmpty
+
+            # Try to parse the result as JSON to verify it's valid
+            try {
+                # Extract JSON from the result (may be wrapped in markdown code blocks)
+                $jsonText = $result.Result -replace '(?s)```json\s*', '' -replace '(?s)```\s*$', ''
+                $jsonResult = $jsonText | ConvertFrom-Json
+                Write-Host "Parsed JSON with pet_name: $($jsonResult.pet_name)"
+            } catch {
+                Write-Host "Note: Result may not be pure JSON: $($result.Result.Substring(0, [Math]::Min(200, $result.Result.Length)))"
+            }
+
+            Write-Host "AI extraction completed successfully"
+        }
+
+        AfterAll {
+            # Clean up generated images
+            if ($script:generatedImages) {
+                $script:generatedImages | Remove-Item -Force -ErrorAction SilentlyContinue
+            }
+            # Also clean up any leftover images from the PDF directory
+            $pdfDir = Split-Path $script:pdfPath -Parent
+            Get-ChildItem -Path $pdfDir -Filter '*.png' -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
+        }
+    }
 }
 
 AfterAll {

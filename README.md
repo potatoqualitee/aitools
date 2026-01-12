@@ -299,6 +299,64 @@ This demonstrates what agentic CLIs do well: read complex requirements, maintain
 
 ## Advanced Usage
 
+### PDF to Structured Data Extraction
+
+Convert PDFs to images and extract structured data using AI vision:
+
+```powershell
+# Convert PDF to images and extract data as JSON
+$params = @{
+    Tool    = "Claude"
+    Prompt  = "Extract pet immunization data from this image"
+    Context = "./Tests/pdf/immunization.json"
+}
+
+Get-ChildItem ./Tests/pdf/immunization.pdf | ConvertTo-AITImage | Invoke-AITool @params
+```
+
+`ConvertTo-AITImage` automatically installs [pdf2img](https://github.com/potatoqualitee/pdf2img) on first use and converts PDFs to PNG images optimized for AI vision models. When you pass a single `.json` file as context, aitools automatically instructs the AI to return raw JSON (no markdown fences) for direct parsing with `ConvertFrom-Json`.
+
+**Free Tier Example: Extract and Write to SQL Server**
+
+Using Copilot's free tier with GPT-5-mini, you can extract structured data and write directly to a database:
+
+```powershell
+$params = @{
+    Tool    = "Copilot"
+    Model   = "gpt-5-mini"
+    Raw     = $true
+    Prompt  = "Extract data from this image as JSON matching the context schema."
+    Context = "./Tests/pdf/immunization.json"
+}
+
+Get-ChildItem ./Tests/pdf/immunization.pdf |
+    ConvertTo-AITImage |
+    Invoke-AITool @params |
+    ConvertFrom-Json |
+    Select-Object -ExpandProperty vaccinations |
+    Write-DbaDataTable -SqlInstance localhost -Database tempdb -Table vaccinations -AutoCreateTable
+```
+
+> **Tip:** Free tier models can be inconsistent. For reliable results at minimal cost, use Claude Haiku 4.5 (`claude-haiku-4-5`) at $0.33 per 1K calls - it's remarkably capable for structured extraction. GPT-5-mini is the best free option; avoid GPT-4.1 for this task.
+
+If the model returns extra data, filter the JSON objects:
+
+```powershell
+# Filter to only records containing "immunization"
+... | ConvertFrom-Json | Where-Object { $PSItem -match "immunization" }
+```
+
+```powershell
+# Pipeline-friendly: returns FileInfo objects
+$images = Get-ChildItem *.pdf | ConvertTo-AITImage
+
+# Adjust DPI for quality vs file size tradeoff
+Get-ChildItem document.pdf | ConvertTo-AITImage -DPI 300
+
+# Mix PDFs with other files using -PassThru
+Get-ChildItem ./docs | ConvertTo-AITImage -PassThru | Invoke-AITool -Prompt "Analyze these files"
+```
+
 ### Working with Images
 
 **Image Analysis and Code Generation (Codex, Claude, Gemini)**

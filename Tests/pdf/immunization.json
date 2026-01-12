@@ -1,0 +1,65 @@
+{
+    "name": "pet",
+    "strict": true,
+    "schema": {
+        "type": "object",
+        "properties": {
+            "pet_name": {
+                "type": "string",
+                "description": "What is the name of the pet?"
+            },
+            "owner_name": {
+                "type": "string",
+                "description": "What is the name of the pet's owner?"
+            },
+            "pet_breed": {
+                "type": "string",
+                "description": "What is the breed of the pet?"
+            },
+            "vaccinations": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "vaccine_name": {
+                            "type": "string",
+                            "description": "What is the name of the vaccine administered?"
+                        },
+                        "date_administered_1": {
+                            "type": "string",
+                            "description": "When was the first dose of the vaccine administered?"
+                        },
+                        "date_administered_2": {
+                            "type": "string",
+                            "description": "When was the second dose of the vaccine administered?"
+                        },
+                        "date_administered_3": {
+                            "type": "string",
+                            "description": "When was the third dose of the vaccine administered?"
+                        },
+                        "veterinarian": {
+                            "type": "string",
+                            "description": "Who is the veterinarian that administered the first dose?"
+                        }
+                    },
+                    "required": [
+                        "vaccine_name",
+                        "date_administered_1",
+                        "date_administered_2",
+                        "date_administered_3",
+                        "veterinarian"
+                    ],
+                    "additionalProperties": false
+                },
+                "description": "What vaccinations were given to the pet, including the vaccine names, administration dates, and veterinarian names?"
+            }
+        },
+        "required": [
+            "pet_name",
+            "owner_name",
+            "pet_breed",
+            "vaccinations"
+        ],
+        "additionalProperties": false
+    }
+}

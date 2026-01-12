@@ -4,3 +4,4 @@ publish.ps1
 .vscode/settings.json
 /.claude
 nul
+Tests/pdf/immunization_page_001.png

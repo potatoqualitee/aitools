@@ -9,7 +9,7 @@
     RootModule        = 'aitools.psm1'
 
     # Version number of this module.
-    ModuleVersion     = '1.0.15'
+    ModuleVersion     = '1.0.20'
 
     # ID used to uniquely identify this module
     GUID              = 'c90f5001-c492-4fbe-8ab3-f03599951bd0'
@@ -18,7 +18,7 @@
     Author            = 'Chrissy LeMaire'
 
     # Copyright statement for this module
-    Copyright         = '2025 Chrissy LeMaire'
+    Copyright         = '2026 Chrissy LeMaire'
 
     # Description of the functionality provided by this module
     Description       = 'PowerShell wrapper for AI coding assistants. Batch process files using Claude Code, Aider, Gemini CLI, GitHub Copilot CLI, and Codex CLI with unified commands and pipeline support.'
@@ -38,6 +38,7 @@
     # Public functions
     FunctionsToExport = @(
         'Clear-AIToolConfig',
+        'ConvertTo-AITImage',
         'Get-AITool',
         'Get-AIToolConfig',
         'Get-AITPrompt',

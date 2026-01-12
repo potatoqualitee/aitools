@@ -286,6 +286,7 @@ Register-PSFTeppArgumentCompleter -Command Get-AITPrompt -Parameter Name -Name P
 
 $exportedFunctions = @(
     'Clear-AIToolConfig',
+    'ConvertTo-AITImage',
     'Get-AITool',
     'Get-AIToolConfig',
     'Get-AITPrompt',
