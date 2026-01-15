@@ -1,7 +1,8 @@
-$prompt = "Review this pet vaccination PDF carefully for data quality issues.
+Review /Tests/pdf/immunization.pdf carefully for data quality issues.
 
 I've already imported the data exactly as shown in the PDF into tempdb tables
-(look it up on localhost).
+(look it up on localhost using windows credentials).
+
 Now I need you to:
 
 1. ANALYZE the document for inconsistencies, errors, or suspicious data:
@@ -13,4 +14,4 @@ Now I need you to:
 
 2. Generate T-SQL UPDATE statements to correct any issues you find
 
-3. List ALL data inconsistencies you discovered"
+3. List ALL data inconsistencies you discovered

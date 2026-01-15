@@ -16,7 +16,7 @@ function Test-GeminiAuth {
     $geminiKey = [Environment]::GetEnvironmentVariable('GEMINI_API_KEY')
     $vertexAI = [Environment]::GetEnvironmentVariable('GOOGLE_GENAI_USE_VERTEXAI')
     $gca = [Environment]::GetEnvironmentVariable('GOOGLE_GENAI_USE_GCA')
-    $settingsPath = Join-Path $HOME '.gemini' 'settings.json'
+    $settingsPath = Join-Path -Path "$HOME/.gemini" -ChildPath 'settings.json'
 
     if ($geminiKey -or $vertexAI -or $gca) {
         Write-PSFMessage -Level Verbose -Message "Gemini auth found via environment variable"

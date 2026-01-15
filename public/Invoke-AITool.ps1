@@ -311,7 +311,7 @@ function Invoke-AITool {
         [Parameter()]
         [string]$Model,
         [Parameter()]
-        [ValidateSet('low', 'medium', 'high')]
+        [ValidateSet('low', 'medium', 'high', '')]
         [string]$ReasoningEffort,
         [Parameter()]
         [string[]]$Attachment,
@@ -339,10 +339,8 @@ function Invoke-AITool {
         [ValidateRange(0, [int]::MaxValue)]
         [int]$Skip,
         [Parameter()]
-        [ValidateRange(1, [int]::MaxValue)]
         [int]$First,
         [Parameter()]
-        [ValidateRange(1, [int]::MaxValue)]
         [int]$Last,
         [Parameter()]
         [ValidateRange(1, 50)]
@@ -365,6 +363,14 @@ function Invoke-AITool {
         # Save original location for cleanup in finally block
         $script:originalLocation = Get-Location
         Write-PSFMessage -Level Verbose -Message "Saved original location: $script:originalLocation"
+
+        # Validate First and Last at runtime (can't use ValidateRange due to GetNewClosure() capturing default 0)
+        if ($PSBoundParameters.ContainsKey('First') -and $First -lt 1) {
+            Stop-PSFFunction -Message "-First must be at least 1" -EnableException $true
+        }
+        if ($PSBoundParameters.ContainsKey('Last') -and $Last -lt 1) {
+            Stop-PSFFunction -Message "-Last must be at least 1" -EnableException $true
+        }
 
         # BatchSize > 1 automatically disables parallel processing
         if ($BatchSize -gt 1) {
@@ -1004,9 +1010,13 @@ function Invoke-AITool {
                                 $capturedOutput = Get-Content -Path $tempOutputFile -Raw -Encoding utf8
                                 Remove-Item -Path $tempOutputFile -Force -ErrorAction SilentlyContinue
 
-                                # Filter out misleading Gemini warnings
+                                # Filter out misleading Gemini warnings and informational stderr messages
                                 if ($currentTool -eq 'Gemini') {
                                     $capturedOutput = $capturedOutput -replace '(?m)^\s*\[WARN\]\s+Skipping unreadable directory:.*?\n', ''
+                                    # Filter out informational messages that Gemini CLI writes to stderr
+                                    $capturedOutput = $capturedOutput -replace '(?m)^.*YOLO mode is enabled\..*\n?', ''
+                                    $capturedOutput = $capturedOutput -replace '(?m)^.*All tool calls will be automatically approved\..*\n?', ''
+                                    $capturedOutput = $capturedOutput -replace '(?m)^.*Loaded cached credentials\..*\n?', ''
                                 }
 
                                 # Strip result to JSON boundaries if single JSON context mode

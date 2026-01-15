@@ -368,9 +368,13 @@ function Invoke-ChatMode {
             $capturedOutput = Get-Content -Path $tempOutputFile -Raw -Encoding utf8
             Remove-Item -Path $tempOutputFile -Force -ErrorAction SilentlyContinue
 
-            # Filter out misleading Gemini warnings
+            # Filter out misleading Gemini warnings and informational stderr messages
             if ($ToolName -eq 'Gemini') {
                 $capturedOutput = $capturedOutput -replace '(?m)^\s*\[WARN\]\s+Skipping unreadable directory:.*?\n', ''
+                # Filter out informational messages that Gemini CLI writes to stderr
+                $capturedOutput = $capturedOutput -replace '(?m)^.*YOLO mode is enabled\..*\n?', ''
+                $capturedOutput = $capturedOutput -replace '(?m)^.*All tool calls will be automatically approved\..*\n?', ''
+                $capturedOutput = $capturedOutput -replace '(?m)^.*Loaded cached credentials\..*\n?', ''
             }
         }
 
