@@ -72,8 +72,9 @@ function ConvertTo-PromptText {
                 $promptText = $Prompt
             }
         }
-        # Check if it's a file path
-        elseif ((Test-Path $Prompt -ErrorAction SilentlyContinue) -and -not (Test-Path $Prompt -PathType Container)) {
+        # Check if it could be a file path (skip Test-Path for multi-line strings or strings with invalid path chars)
+        # This prevents Test-Path from interpreting prompt text as PSDrive names when colons are present
+        elseif ($Prompt -notmatch '[\r\n]' -and $Prompt.Length -lt 260 -and (Test-Path $Prompt -ErrorAction SilentlyContinue) -and -not (Test-Path $Prompt -PathType Container)) {
             Write-PSFMessage -Level Verbose -Message "Prompt is a file path: $Prompt"
             $promptFilePath = $Prompt
             $content = Get-Content $Prompt -Raw
