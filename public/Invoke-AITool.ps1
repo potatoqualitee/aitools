@@ -162,6 +162,18 @@ function Invoke-AITool {
 
         This parameter overrides the configured default from Set-AIToolConfig.
 
+    .PARAMETER RequirePermissions
+        When enabled, disables auto-approve mode and requires user confirmation for dangerous operations.
+        By default (when this switch is not specified), permission bypass is enabled and the tool
+        auto-approves all operations without prompting.
+
+        For Claude: Removes --dangerously-skip-permissions flag
+        For Aider: Removes --yes-always flag
+        For Codex: Uses --auto-edit instead of --dangerously-bypass-approvals-and-sandbox
+        For Gemini: Uses --approval-mode auto_edit instead of --yolo
+
+        This parameter overrides the configured default from Set-AIToolConfig.
+
     .EXAMPLE
         Get-ChildItem *.Tests.ps1 | Invoke-AITool -Prompt "Refactor from Pester v4 to v5"
 
@@ -295,6 +307,14 @@ function Invoke-AITool {
     .EXAMPLE
         Get-ChildItem *.ps1 | Invoke-AITool -Prompt "Fix bugs" -Tool Claude -IgnoreInstructions
         Processes all PowerShell files with Claude, bypassing any project or user instructions.
+
+    .EXAMPLE
+        Invoke-AITool -Path "script.ps1" -Prompt "Make changes" -RequirePermissions
+        Processes the file with permission bypass disabled - the AI will prompt for confirmation.
+
+    .EXAMPLE
+        Invoke-AITool -Path "script.ps1" -Prompt "Make changes" -RequirePermissions:$false
+        Explicitly enables auto-approve mode (the default behavior).
     #>
     [CmdletBinding(SupportsShouldProcess)]
     param(
@@ -356,7 +376,10 @@ function Invoke-AITool {
         [ValidateRange(1, 100)]
         [int]$MaxTokenErrors = 3,
         [Parameter()]
-        [switch]$IgnoreInstructions
+        [Alias('NoCustomInstructions')]
+        [switch]$IgnoreInstructions,
+        [Parameter()]
+        [switch]$RequirePermissions
     )
 
     begin {
@@ -557,15 +580,19 @@ function Invoke-AITool {
 
             # Load configuration for current tool using helper function
             $configParams = @{
-                ToolName                    = $currentTool
-                ModelOverride               = $Model
-                ReasoningEffortOverride     = $ReasoningEffort
-                IgnoreInstructionsOverride  = $IgnoreInstructions
-                IgnoreInstructionsBound     = $PSBoundParameters.ContainsKey('IgnoreInstructions')
+                ToolName                      = $currentTool
+                ModelOverride                 = $Model
+                ReasoningEffortOverride       = $ReasoningEffort
+                IgnoreInstructionsOverride    = $IgnoreInstructions
+                IgnoreInstructionsBound       = $PSBoundParameters.ContainsKey('IgnoreInstructions')
+                RequirePermissionsOverride    = $RequirePermissions.IsPresent
+                RequirePermissionsBound       = $PSBoundParameters.ContainsKey('RequirePermissions')
             }
             $toolConfig = Get-ToolConfiguration @configParams
 
-            $permissionBypass = $toolConfig.PermissionBypass
+            # RequirePermissions = $false (default) means bypass is enabled (auto-approve)
+            # RequirePermissions = $true means bypass is disabled (require confirmation)
+            $permissionBypass = -not $toolConfig.RequirePermissions
             $modelToUse = $toolConfig.Model
             $editMode = $toolConfig.EditMode
             $reasoningEffortToUse = $toolConfig.ReasoningEffort

@@ -13,8 +13,13 @@ function Set-AIToolConfig {
     .PARAMETER EditMode
         The edit mode to use (Aider only). Valid values: Diff, Whole
 
-    .PARAMETER PermissionBypass
-        Enable permission bypass/auto-approve mode for the tool.
+    .PARAMETER RequirePermissions
+        When set to $true, disables auto-approve mode and requires user confirmation for dangerous operations.
+        When set to $false (default), enables permission bypass/auto-approve mode.
+
+        This parameter accepts a boolean value, allowing you to explicitly set it to $true or $false:
+        - Set-AIToolConfig -Tool Claude -RequirePermissions $true   # Requires permissions
+        - Set-AIToolConfig -Tool Claude -RequirePermissions $false  # Auto-approve (default)
 
     .PARAMETER Model
         Default model to use for the tool.
@@ -39,7 +44,12 @@ function Set-AIToolConfig {
         Set-AIToolConfig -Tool Aider -EditMode Diff
 
     .EXAMPLE
-        Set-AIToolConfig -Tool Claude -PermissionBypass
+        Set-AIToolConfig -Tool Claude -RequirePermissions $true
+        Disables auto-approve mode - Claude will prompt for confirmation on dangerous operations.
+
+    .EXAMPLE
+        Set-AIToolConfig -Tool Claude -RequirePermissions $false
+        Enables auto-approve mode (default) - Claude will automatically approve all operations.
 
     .EXAMPLE
         Set-AIToolConfig -Tool Aider -Model "gpt-4"
@@ -51,8 +61,8 @@ function Set-AIToolConfig {
         Set-AIToolConfig -Tool Aider -AiderOutputDir "C:\MyAiderHistory"
 
     .EXAMPLE
-        Set-AIToolConfig -Tool All -PermissionBypass
-        Enables permission bypass for all AI tools.
+        Set-AIToolConfig -Tool All -RequirePermissions $false
+        Enables auto-approve mode for all AI tools (the default behavior).
 
     .EXAMPLE
         Set-AIToolConfig -Tool Claude -IgnoreInstructions
@@ -68,11 +78,13 @@ function Set-AIToolConfig {
         [string]$Tool,
         [ValidateSet('Diff', 'Whole')]
         [string]$EditMode,
-        [switch]$PermissionBypass,
+        [Parameter()]
+        [bool]$RequirePermissions,
         [string]$Model,
         [ValidateSet('low', 'medium', 'high')]
         [string]$ReasoningEffort,
         [string]$AiderOutputDir,
+        [Alias('NoCustomInstructions')]
         [switch]$IgnoreInstructions
     )
 
@@ -103,10 +115,10 @@ function Set-AIToolConfig {
             }
         }
 
-        if ($PSBoundParameters.ContainsKey('PermissionBypass')) {
-            Write-PSFMessage -Level Verbose -Message "PermissionBypass parameter provided: $($PermissionBypass.IsPresent)"
-            Set-PSFConfig -FullName "AITools.$currentTool.PermissionBypass" -Value $PermissionBypass.IsPresent -PassThru | Register-PSFConfig
-            Write-PSFMessage -Level Verbose -Message "Set $currentTool permission bypass to: $($PermissionBypass.IsPresent)"
+        if ($PSBoundParameters.ContainsKey('RequirePermissions')) {
+            Write-PSFMessage -Level Verbose -Message "RequirePermissions parameter provided: $RequirePermissions"
+            Set-PSFConfig -FullName "AITools.$currentTool.RequirePermissions" -Value $RequirePermissions -PassThru | Register-PSFConfig
+            Write-PSFMessage -Level Verbose -Message "Set $currentTool require permissions to: $RequirePermissions"
         }
 
         if ($Model) {

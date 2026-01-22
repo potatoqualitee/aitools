@@ -26,7 +26,7 @@ function Get-ToolConfiguration {
 
     .OUTPUTS
         [hashtable] with keys:
-        - PermissionBypass: Whether to bypass permission prompts
+        - RequirePermissions: Whether to require user confirmation for dangerous operations (false = auto-approve)
         - Model: The model to use (override or configured default)
         - EditMode: The edit mode (Diff, etc.)
         - ReasoningEffort: The reasoning effort level (low, medium, high)
@@ -51,12 +51,19 @@ function Get-ToolConfiguration {
         [switch]$IgnoreInstructionsOverride,
 
         [Parameter()]
-        [bool]$IgnoreInstructionsBound = $false
+        [bool]$IgnoreInstructionsBound = $false,
+
+        [Parameter()]
+        [bool]$RequirePermissionsOverride,
+
+        [Parameter()]
+        [bool]$RequirePermissionsBound = $false
     )
 
     # Load configuration for the tool
-    $permissionBypass = Get-PSFConfigValue -FullName "AITools.$ToolName.PermissionBypass" -Fallback $true
-    Write-PSFMessage -Level Verbose -Message "Permission bypass: $permissionBypass"
+    # RequirePermissions: $false (default) = auto-approve, $true = require confirmation
+    $configuredRequirePermissions = Get-PSFConfigValue -FullName "AITools.$ToolName.RequirePermissions" -Fallback $false
+    Write-PSFMessage -Level Verbose -Message "Configured require permissions: $configuredRequirePermissions"
 
     $configuredModel = Get-PSFConfigValue -FullName "AITools.$ToolName.Model" -Fallback $null
     Write-PSFMessage -Level Verbose -Message "Configured model: $configuredModel"
@@ -81,8 +88,12 @@ function Get-ToolConfiguration {
     $ignoreInstructionsToUse = if ($IgnoreInstructionsBound) { $IgnoreInstructionsOverride.IsPresent } else { $configuredIgnoreInstructions }
     Write-PSFMessage -Level Verbose -Message "Ignore instructions to use: $ignoreInstructionsToUse"
 
+    # Command-line parameter overrides config for RequirePermissions
+    $requirePermissionsToUse = if ($RequirePermissionsBound) { $RequirePermissionsOverride } else { $configuredRequirePermissions }
+    Write-PSFMessage -Level Verbose -Message "Require permissions to use: $requirePermissionsToUse"
+
     return @{
-        PermissionBypass   = $permissionBypass
+        RequirePermissions = $requirePermissionsToUse
         Model              = $modelToUse
         EditMode           = $editMode
         ReasoningEffort    = $reasoningEffortToUse
