@@ -127,7 +127,9 @@ function Install-AITool {
             } else {
                 # For CLI tools, we can only detect the currently active version
                 $installedVersion = Get-CommandVersion -Command $tool.Command
-                $commandInfo = Get-Command $tool.Command -ErrorAction SilentlyContinue
+                $allCmds = @(Get-Command $tool.Command -All -ErrorAction SilentlyContinue)
+                $commandInfo = $allCmds | Where-Object { $_.Source -and $_.Source -notmatch '\.ps1$' } | Select-Object -First 1
+                if (-not $commandInfo) { $commandInfo = $allCmds | Select-Object -First 1 }
                 $commandPath = if ($commandInfo) { $commandInfo.Source } else { $null }
                 $existingInstallations += [PSCustomObject]@{
                     Version = ($installedVersion -replace '^.*?(\d+\.\d+\.\d+).*$', '$1').Trim()
@@ -1218,8 +1220,10 @@ function Install-AITool {
                         $commandPath = $module.Path
                     } else {
                         $version = Get-CommandVersion -Command $tool.Command
-                        # Get the full path to the command
-                        $commandInfo = Get-Command $tool.Command -ErrorAction SilentlyContinue
+                        # Get the full path to the command, preferring .exe/.cmd over .ps1
+                        $allCmds = @(Get-Command $tool.Command -All -ErrorAction SilentlyContinue)
+                        $commandInfo = $allCmds | Where-Object { $_.Source -and $_.Source -notmatch '\.ps1$' } | Select-Object -First 1
+                        if (-not $commandInfo) { $commandInfo = $allCmds | Select-Object -First 1 }
                         $commandPath = if ($commandInfo) { $commandInfo.Source } else { $null }
                     }
 

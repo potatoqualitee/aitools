@@ -83,8 +83,10 @@ function Get-AITool {
                             $version = $versionOutput.ToString().Trim()
                         }
 
-                        # Get the command path
-                        $commandInfo = Get-Command $toolDef.Command -ErrorAction SilentlyContinue
+                        # Get the command path, preferring .exe/.cmd over .ps1
+                        $allCommands = @(Get-Command $toolDef.Command -All -ErrorAction SilentlyContinue)
+                        $commandInfo = $allCommands | Where-Object { $_.Source -and $_.Source -notmatch '\.ps1$' } | Select-Object -First 1
+                        if (-not $commandInfo) { $commandInfo = $allCommands | Select-Object -First 1 }
                         $commandPath = if ($commandInfo) { $commandInfo.Source } else { $null }
                     }
 

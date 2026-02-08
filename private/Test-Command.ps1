@@ -64,10 +64,23 @@ function Test-Command {
             $psi.RedirectStandardInput = $true
 
             # .cmd/.bat files on Windows must run via cmd.exe with UseShellExecute=$false
+            # .ps1 files must run via powershell.exe
             $extension = [System.IO.Path]::GetExtension($exePath).ToLowerInvariant()
             if ($extension -in '.cmd', '.bat') {
                 $psi.FileName = 'cmd.exe'
                 $psi.Arguments = "/c `"$exePath`" --version"
+            } elseif ($extension -eq '.ps1') {
+                # npm global installs create .ps1 shims that can't be executed directly
+                # Prefer the .cmd version if available (same directory, same base name)
+                $cmdPath = [System.IO.Path]::ChangeExtension($exePath, '.cmd')
+                if (Test-Path $cmdPath) {
+                    $psi.FileName = 'cmd.exe'
+                    $psi.Arguments = "/c `"$cmdPath`" --version"
+                    Write-PSFMessage -Level Verbose -Message "Using .cmd shim instead of .ps1: $cmdPath"
+                } else {
+                    $psi.FileName = 'powershell.exe'
+                    $psi.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$exePath`" --version"
+                }
             } else {
                 $psi.FileName = $exePath
                 $psi.Arguments = '--version'

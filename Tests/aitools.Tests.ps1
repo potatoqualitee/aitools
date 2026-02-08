@@ -1,6 +1,6 @@
 BeforeAll {
     # Import the module
-    $modulePath = Join-Path $PSScriptRoot '..' 'aitools.psd1'
+    $modulePath = Join-Path (Join-Path $PSScriptRoot '..') 'aitools.psd1'
     Import-Module $modulePath -Force
 
     # Ensure CLAUDE_CODE_OAUTH_TOKEN is available
