@@ -116,7 +116,7 @@ function Install-AITool {
         $existingInstallations = @()
         if (Test-Command -Command $tool.Command) {
             # Get all installed versions
-            if ($tool.IsWrapper) {
+            if ($tool['IsWrapper']) {
                 $modules = Get-Module -ListAvailable -Name $tool.Command | Sort-Object Version -Descending
                 foreach ($module in $modules) {
                     $existingInstallations += [PSCustomObject]@{
@@ -126,11 +126,9 @@ function Install-AITool {
                 }
             } else {
                 # For CLI tools, we can only detect the currently active version
-                $installedVersion = & $tool.Command --version 2>&1 | Select-Object -First 1
-                $commandPath = (Get-Command $tool.Command -ErrorAction SilentlyContinue).Source
-                if (-not $commandPath) {
-                    $commandPath = (Get-Command $tool.Command -ErrorAction SilentlyContinue).Path
-                }
+                $installedVersion = Get-CommandVersion -Command $tool.Command
+                $commandInfo = Get-Command $tool.Command -ErrorAction SilentlyContinue
+                $commandPath = if ($commandInfo) { $commandInfo.Source } else { $null }
                 $existingInstallations += [PSCustomObject]@{
                     Version = ($installedVersion -replace '^.*?(\d+\.\d+\.\d+).*$', '$1').Trim()
                     Path    = $commandPath
@@ -378,7 +376,7 @@ function Install-AITool {
             }
 
             if ($useWingetFallback) {
-                $wingetFallbackCmd = if ($tool.FallbackInstallCommands) { $tool.FallbackInstallCommands[$os] } else { $null }
+                $wingetFallbackCmd = if ($tool['FallbackInstallCommands']) { $tool['FallbackInstallCommands'][$os] } else { $null }
                 if ($wingetFallbackCmd) {
                     if ($wingetFallbackCmd -isnot [array]) { $wingetFallbackCmd = @($wingetFallbackCmd) }
                     $installCmd = $wingetFallbackCmd
@@ -650,7 +648,7 @@ function Install-AITool {
 
                     # Check if this is a PowerShell cmdlet (for wrapper modules like PSOpenAI)
                     # PowerShell cmdlets must be executed via Invoke-Expression, not Start-Process
-                    $isPowerShellCmdlet = $tool.IsWrapper -or $cmd -match '^(Install-Module|Uninstall-Module|Update-Module|Import-Module)'
+                    $isPowerShellCmdlet = $tool['IsWrapper'] -or $cmd -match '^(Install-Module|Uninstall-Module|Update-Module|Import-Module)'
 
                     # Check if command contains shell operators (pipes, redirects, semicolons, etc.)
                     # These require shell execution and can't be handled by Start-Process
@@ -700,6 +698,8 @@ function Install-AITool {
                                 Invoke-Expression $cmd
                                 $exitCode = $LASTEXITCODE
                                 if (-not $exitCode) { $exitCode = 0 }
+                                $stdout = ''
+                                $stderr = ''
                             } else {
                                 # Use cmd.exe for other shell operators
                                 Write-PSFMessage -Level Verbose -Message "Executing via cmd.exe"
@@ -802,9 +802,6 @@ function Install-AITool {
 
                             if ($selectedCommand) {
                                 $resolvedExecutable = $selectedCommand.Source
-                                if (-not $resolvedExecutable) {
-                                    $resolvedExecutable = $selectedCommand.Path
-                                }
                                 Write-PSFMessage -Level Verbose -Message "Resolved executable: $resolvedExecutable"
                             } else {
                                 # Fallback to original executable name
@@ -969,9 +966,9 @@ function Install-AITool {
                         }
 
                         # Generic fallback: try FallbackInstallCommands if primary install failed
-                        $hasFallback = $tool.FallbackInstallCommands -and $tool.FallbackInstallCommands[$os]
+                        $hasFallback = $tool['FallbackInstallCommands'] -and $tool['FallbackInstallCommands'][$os]
                         if ($exitCode -ne 0 -and $hasFallback) {
-                            $fallbackCmds = $tool.FallbackInstallCommands[$os]
+                            $fallbackCmds = $tool['FallbackInstallCommands'][$os]
                             if ($fallbackCmds -isnot [array]) { $fallbackCmds = @($fallbackCmds) }
 
                             # Only try fallback if we're not already executing a fallback command
@@ -1215,17 +1212,15 @@ function Install-AITool {
                     Write-PSFMessage -Level Verbose -Message "$currentToolName installed successfully!"
 
                     # Get version differently for PowerShell modules vs CLIs
-                    if ($tool.IsWrapper) {
+                    if ($tool['IsWrapper']) {
                         $module = Get-Module -ListAvailable -Name $tool.Command | Sort-Object Version -Descending | Select-Object -First 1
                         $version = $module.Version.ToString()
                         $commandPath = $module.Path
                     } else {
-                        $version = & $tool.Command --version 2>&1 | Select-Object -First 1
+                        $version = Get-CommandVersion -Command $tool.Command
                         # Get the full path to the command
-                        $commandPath = (Get-Command $tool.Command -ErrorAction SilentlyContinue).Source
-                        if (-not $commandPath) {
-                            $commandPath = (Get-Command $tool.Command -ErrorAction SilentlyContinue).Path
-                        }
+                        $commandInfo = Get-Command $tool.Command -ErrorAction SilentlyContinue
+                        $commandPath = if ($commandInfo) { $commandInfo.Source } else { $null }
                     }
 
                     Write-PSFMessage -Level Verbose -Message "Version: $version"

@@ -32,7 +32,7 @@ function Initialize-AIToolDefault {
 
         $index = 1
         foreach ($tool in $sortedTools) {
-            $note = if ($tool.Value.Note) { " - $($tool.Value.Note)" } else { "" }
+            $note = if ($tool.Value['Note']) { " - $($tool.Value['Note'])" } else { "" }
             Write-PSFMessage -Level Verbose -Message "$index. $($tool.Key)$note"
             $index++
         }

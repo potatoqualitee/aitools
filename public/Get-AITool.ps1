@@ -70,7 +70,7 @@ function Get-AITool {
 
                 # Get version information differently for PowerShell modules vs CLIs
                 try {
-                    if ($toolDef.IsWrapper) {
+                    if ($toolDef['IsWrapper']) {
                         $module = Get-Module -ListAvailable -Name $toolDef.Command | Sort-Object Version -Descending | Select-Object -First 1
                         $version = $module.Version.ToString()
                         $commandPath = $module.Path
@@ -84,10 +84,8 @@ function Get-AITool {
                         }
 
                         # Get the command path
-                        $commandPath = (Get-Command $toolDef.Command -ErrorAction SilentlyContinue).Source
-                        if (-not $commandPath) {
-                            $commandPath = (Get-Command $toolDef.Command -ErrorAction SilentlyContinue).Path
-                        }
+                        $commandInfo = Get-Command $toolDef.Command -ErrorAction SilentlyContinue
+                        $commandPath = if ($commandInfo) { $commandInfo.Source } else { $null }
                     }
 
                     Write-PSFMessage -Level Verbose -Message "Version: $version"

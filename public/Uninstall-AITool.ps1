@@ -83,10 +83,7 @@ function Uninstall-AITool {
 
         # Detect installation method by checking where the command is located
         $commandInfo = Get-Command $tool.Command -ErrorAction SilentlyContinue
-        $commandPath = $commandInfo.Source
-        if (-not $commandPath) {
-            $commandPath = $commandInfo.Path
-        }
+        $commandPath = if ($commandInfo) { $commandInfo.Source } else { $null }
 
         Write-PSFMessage -Level Verbose -Message "Command location: $commandPath"
 
@@ -138,7 +135,7 @@ function Uninstall-AITool {
         Write-PSFMessage -Level Verbose -Message "Executing uninstall command"
 
         # Check if this is a PowerShell cmdlet (for wrapper modules like PSOpenAI)
-        $isPowerShellCmdlet = $tool.IsWrapper -or $uninstallCmd -match '^(Install-Module|Uninstall-Module|Update-Module|Import-Module)'
+        $isPowerShellCmdlet = $tool['IsWrapper'] -or $uninstallCmd -match '^(Install-Module|Uninstall-Module|Update-Module|Import-Module)'
 
         try {
             # Handle PowerShell cmdlets directly
@@ -201,10 +198,8 @@ function Uninstall-AITool {
                     Write-PSFMessage -Level Verbose -Message "Arguments: $arguments"
 
                     # Resolve the full path to the executable to avoid PATH issues with UseShellExecute = $false
-                    $executablePath = (Get-Command $executable -ErrorAction SilentlyContinue).Source
-                    if (-not $executablePath) {
-                        $executablePath = (Get-Command $executable -ErrorAction SilentlyContinue).Path
-                    }
+                    $execInfo = Get-Command $executable -ErrorAction SilentlyContinue
+                    $executablePath = if ($execInfo) { $execInfo.Source } else { $null }
                     if (-not $executablePath) {
                         # If we still can't find it, use the executable as-is and hope for the best
                         $executablePath = $executable

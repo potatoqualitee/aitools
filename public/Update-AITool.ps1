@@ -93,13 +93,13 @@ function Update-AITool {
                     $oldVersion = $null
                     if (Test-Command -Command $tool.Command) {
                         # Get version differently for PowerShell modules vs CLIs
-                        if ($tool.IsWrapper) {
+                        if ($tool['IsWrapper']) {
                             $module = Get-Module -ListAvailable -Name $tool.Command | Sort-Object Version -Descending | Select-Object -First 1
                             if ($module) {
                                 $oldVersion = $module.Version.ToString()
                             }
                         } else {
-                            $oldVersion = & $tool.Command --version 2>&1 | Select-Object -First 1
+                            $oldVersion = Get-CommandVersion -Command $tool.Command
                             $oldVersion = ($oldVersion -replace '^.*?(\d+\.\d+\.\d+).*$', '$1').Trim()
                         }
                         Write-PSFMessage -Level Verbose -Message "Current version: $oldVersion"

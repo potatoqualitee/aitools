@@ -15,7 +15,7 @@ function Test-Command {
     # (Special handling for wrapper modules like PSOpenAI)
     if (-not $IsModule) {
         $matchingTool = $script:ToolDefinitions.GetEnumerator() | Where-Object {
-            $_.Value.Command -eq $Command -and $_.Value.IsWrapper
+            $_.Value.Command -eq $Command -and $_.Value['IsWrapper']
         } | Select-Object -First 1
 
         if ($matchingTool) {
@@ -45,11 +45,63 @@ function Test-Command {
 
     # For script/batch files, verify they can actually execute
     # by checking their dependencies (like node for npm-installed tools)
+    # Uses System.Diagnostics.Process with redirected stdin to prevent interactive prompts
+    # from shim commands (e.g. gh copilot alias) that detect missing tools and prompt to install
     if ($cmd.CommandType -in 'Application', 'ExternalScript') {
-        # Try to get version or help to verify it works
-        # Use timeout to prevent hanging
+        $process = $null
         try {
-            $result = & $Command --version 2>&1 | Select-Object -First 1
+            $exePath = $cmd.Source
+            if ([string]::IsNullOrWhiteSpace($exePath)) {
+                Write-PSFMessage -Level Verbose -Message "Command '$Command' has no Source path, cannot verify"
+                return $false
+            }
+
+            $psi = New-Object System.Diagnostics.ProcessStartInfo
+            $psi.UseShellExecute = $false
+            $psi.CreateNoWindow = $true
+            $psi.RedirectStandardOutput = $true
+            $psi.RedirectStandardError = $true
+            $psi.RedirectStandardInput = $true
+
+            # .cmd/.bat files on Windows must run via cmd.exe with UseShellExecute=$false
+            $extension = [System.IO.Path]::GetExtension($exePath).ToLowerInvariant()
+            if ($extension -in '.cmd', '.bat') {
+                $psi.FileName = 'cmd.exe'
+                $psi.Arguments = "/c `"$exePath`" --version"
+            } else {
+                $psi.FileName = $exePath
+                $psi.Arguments = '--version'
+            }
+
+            $process = New-Object System.Diagnostics.Process
+            $process.StartInfo = $psi
+            $process.Start() | Out-Null
+
+            # Close stdin immediately to prevent interactive prompts
+            $process.StandardInput.Close()
+
+            # Read output before WaitForExit to avoid deadlock
+            $versionOutput = $process.StandardOutput.ReadToEnd()
+            $null = $process.StandardError.ReadToEnd()
+
+            if (-not $process.WaitForExit(10000)) {
+                Write-PSFMessage -Level Verbose -Message "Command '$Command' timed out after 10 seconds"
+                try { $process.Kill() } catch { }
+                return $false
+            }
+
+            if ($process.ExitCode -ne 0) {
+                Write-PSFMessage -Level Verbose -Message "Command '$Command' exited with code $($process.ExitCode)"
+                return $false
+            }
+
+            $result = ($versionOutput -split "`r?`n" | Where-Object { $_.Trim() } | Select-Object -First 1)
+
+            if ([string]::IsNullOrWhiteSpace($result)) {
+                Write-PSFMessage -Level Verbose -Message "Command '$Command' produced no output"
+                return $false
+            }
+
             Write-PSFMessage -Level Verbose -Message "Command '$Command' version check: $($result.Substring(0, [Math]::Min(100, $result.Length)))"
 
             # Check for common error patterns
@@ -63,6 +115,10 @@ function Test-Command {
         } catch {
             Write-PSFMessage -Level Verbose -Message "Command '$Command' exists but failed to execute: $_"
             return $false
+        } finally {
+            if ($null -ne $process) {
+                try { $process.Dispose() } catch { }
+            }
         }
     }
 
