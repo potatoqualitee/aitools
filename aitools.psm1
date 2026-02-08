@@ -65,12 +65,15 @@ $script:ToolDefinitions = @{
     'Claude'       = @{
         Command           = 'claude'
         InstallCommands   = @{
-            Windows = 'winget install --id=Anthropic.ClaudeCode -e --accept-source-agreements --accept-package-agreements'
+            Windows = 'winget install --id=Anthropic.ClaudeCode -e --accept-source-agreements --accept-package-agreements --source winget'
             Linux   = 'curl -fsSL https://claude.ai/install.sh | bash'
             MacOS   = 'curl -fsSL https://claude.ai/install.sh | bash'
         }
+        FallbackInstallCommands = @{
+            Windows = 'irm https://claude.ai/install.ps1 | iex'
+        }
         UninstallCommands = @{
-            Windows = 'winget uninstall --id=Anthropic.ClaudeCode -e'
+            Windows = 'winget uninstall --id=Anthropic.ClaudeCode -e --source winget'
             Linux   = 'claude uninstall'
             MacOS   = 'claude uninstall'
         }
@@ -87,6 +90,11 @@ $script:ToolDefinitions = @{
             Windows = @('python -m pip install aider-install', 'aider-install')
             Linux   = 'pipx install aider-chat'
             MacOS   = 'pipx install aider-chat'
+        }
+        FallbackInstallCommands = @{
+            Windows = 'python -m pip install aider-chat'
+            Linux   = 'python3 -m pip install --user aider-chat'
+            MacOS   = 'python3 -m pip install --user aider-chat'
         }
         UninstallCommands = @{
             Windows = 'uv tool uninstall aider-chat'
@@ -114,6 +122,9 @@ $script:ToolDefinitions = @{
             Windows = 'npm install -g @google/gemini-cli'
             Linux   = 'npm install -g @google/gemini-cli'
             MacOS   = 'brew install gemini-cli'
+        }
+        FallbackInstallCommands = @{
+            MacOS = 'npm install -g @google/gemini-cli'
         }
         UninstallCommands = @{
             Windows = 'npm uninstall -g @google/gemini-cli'
@@ -208,6 +219,10 @@ $script:ToolDefinitions = @{
             Linux   = 'curl -fsSL https://ollama.com/install.sh | sh'
             MacOS   = 'brew install ollama'
         }
+        FallbackInstallCommands = @{
+            Windows = '$p = Join-Path $env:TEMP OllamaSetup.exe; Invoke-WebRequest -Uri https://ollama.com/download/OllamaSetup.exe -OutFile $p -UseBasicParsing; Start-Process -FilePath $p -ArgumentList /VERYSILENT -Wait; Remove-Item $p -ErrorAction SilentlyContinue'
+            MacOS   = 'curl -fsSL https://ollama.com/install.sh | sh'
+        }
         UninstallCommands = @{
             Windows = 'winget uninstall --id=ollama.ollama -e'
             Linux   = $null
@@ -289,13 +304,19 @@ $exportedFunctions = @(
     'ConvertTo-AITImage',
     'Get-AITool',
     'Get-AIToolConfig',
+    'Get-AIToolCredential',
     'Get-AITPrompt',
     'Initialize-AITool',
     'Install-AITool',
     'Invoke-AITool',
+    'Invoke-AIToolSimple',
+    'Invoke-AIToolStream',
+    'Remove-AIToolConfig',
     'Select-UnmodifiedFile',
     'Set-AIToolConfig',
+    'Set-AIToolCredential',
     'Set-AIToolDefault',
+    'Test-AIToolCredential',
     'Test-GitFileModified',
     'Uninstall-AITool',
     'Update-AITool',

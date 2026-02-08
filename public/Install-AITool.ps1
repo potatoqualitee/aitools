@@ -310,16 +310,146 @@ function Install-AITool {
             Write-PSFMessage -Level Verbose -Message "Modified command(s): $($installCmd -join ' ; ')"
         }
 
-        # For Claude on Windows with winget, check if winget is available and fallback to PowerShell installer if not
-        if ($currentToolName -eq 'Claude' -and $os -eq 'Windows' -and $installCmd[0] -match '^winget') {
+        # For Windows with winget, check if winget is available and sources are healthy
+        if ($os -eq 'Windows' -and $installCmd[0] -match '^winget') {
             Write-Progress -Activity "Installing $currentToolName" -Status "Checking for winget availability" -PercentComplete 18
             Write-PSFMessage -Level Verbose -Message "Checking if winget is available..."
+            $useWingetFallback = $false
+
             if (-not (Test-Command -Command 'winget')) {
-                Write-PSFMessage -Level Warning -Message "winget is not available. Falling back to PowerShell installer..."
-                $installCmd = @('irm https://claude.ai/install.ps1 | iex')
-                Write-PSFMessage -Level Verbose -Message "Using fallback command: $($installCmd[0])"
+                Write-PSFMessage -Level Warning -Message "winget is not available. Checking for fallback installer..."
+                $useWingetFallback = $true
             } else {
-                Write-PSFMessage -Level Verbose -Message "winget is available, proceeding with winget installation"
+                # Verify winget sources are actually functional (common failure on remote/headless sessions)
+                Write-PSFMessage -Level Verbose -Message "Verifying winget sources are functional..."
+                $wingetExe = (Get-Command winget -ErrorAction Stop).Source
+                try {
+                    $psi = New-Object System.Diagnostics.ProcessStartInfo
+                    $psi.FileName = $wingetExe
+                    $psi.Arguments = 'source list'
+                    $psi.RedirectStandardOutput = $true
+                    $psi.RedirectStandardError = $true
+                    $psi.UseShellExecute = $false
+                    $psi.CreateNoWindow = $true
+
+                    $process = New-Object System.Diagnostics.Process
+                    $process.StartInfo = $psi
+                    $process.Start() | Out-Null
+                    $null = $process.StandardOutput.ReadToEnd()
+                    $wingetSourceErr = $process.StandardError.ReadToEnd()
+                    $process.WaitForExit()
+
+                    if ($process.ExitCode -ne 0 -or $wingetSourceErr -match '0x8a15000f|Data required by the source is missing') {
+                        Write-PSFMessage -Level Warning -Message "winget sources are not functional. Attempting 'winget source reset --force'..."
+                        Write-PSFMessage -Level Verbose -Message "winget source list exit code: $($process.ExitCode)"
+                        if ($wingetSourceErr) { Write-PSFMessage -Level Verbose -Message "winget source error: $wingetSourceErr" }
+
+                        # Try to fix winget sources with reset
+                        $psi2 = New-Object System.Diagnostics.ProcessStartInfo
+                        $psi2.FileName = $wingetExe
+                        $psi2.Arguments = 'source reset --force'
+                        $psi2.RedirectStandardOutput = $true
+                        $psi2.RedirectStandardError = $true
+                        $psi2.UseShellExecute = $false
+                        $psi2.CreateNoWindow = $true
+
+                        $resetProcess = New-Object System.Diagnostics.Process
+                        $resetProcess.StartInfo = $psi2
+                        $resetProcess.Start() | Out-Null
+                        $resetOut = $resetProcess.StandardOutput.ReadToEnd()
+                        $resetErr = $resetProcess.StandardError.ReadToEnd()
+                        $resetProcess.WaitForExit()
+
+                        if ($resetProcess.ExitCode -eq 0) {
+                            Write-PSFMessage -Level Output -Message "winget sources reset successfully. Proceeding with winget installation."
+                            if ($resetOut.Trim()) { Write-PSFMessage -Level Verbose -Message "Reset output: $resetOut" }
+                        } else {
+                            Write-PSFMessage -Level Warning -Message "winget source reset failed (exit code: $($resetProcess.ExitCode)). Checking for fallback installer..."
+                            if ($resetErr) { Write-PSFMessage -Level Verbose -Message "Reset error: $resetErr" }
+                            $useWingetFallback = $true
+                        }
+                    } else {
+                        Write-PSFMessage -Level Verbose -Message "winget sources are functional, proceeding with winget installation"
+                    }
+                } catch {
+                    Write-PSFMessage -Level Warning -Message "Failed to verify winget sources: $_. Checking for fallback installer..."
+                    $useWingetFallback = $true
+                }
+            }
+
+            if ($useWingetFallback) {
+                $wingetFallbackCmd = if ($tool.FallbackInstallCommands) { $tool.FallbackInstallCommands[$os] } else { $null }
+                if ($wingetFallbackCmd) {
+                    if ($wingetFallbackCmd -isnot [array]) { $wingetFallbackCmd = @($wingetFallbackCmd) }
+                    $installCmd = $wingetFallbackCmd
+                    Write-PSFMessage -Level Verbose -Message "Using fallback command: $($installCmd[0])"
+                    if ($Version) {
+                        Write-PSFMessage -Level Warning -Message "Fallback installer may not install specific version $Version. Latest version will be installed."
+                    }
+                } else {
+                    Write-PSFMessage -Level Warning -Message "winget is not functional and no fallback installer is available for $currentToolName. Attempting winget install anyway..."
+                }
+            }
+        }
+
+        # Install Claude dependencies when in Docker container (critical - Claude exits silently without these)
+        if ($currentToolName -eq 'Claude' -and $os -eq 'Linux' -and (Test-DockerContainer)) {
+            Write-Progress -Activity "Installing $currentToolName" -Status "Installing Docker dependencies" -PercentComplete 19
+            Write-PSFMessage -Level Verbose -Message "Docker container detected - checking Claude Code dependencies..."
+
+            # These are critical: Claude exits silently with code 0 if missing
+            $dependencies = @(
+                @{ Package = 'ripgrep'; Command = 'rg' }
+                @{ Package = 'fzf'; Command = 'fzf' }
+                @{ Package = 'zsh'; Command = 'zsh' }
+            )
+
+            $missing = @()
+            foreach ($dep in $dependencies) {
+                if (-not (Test-Command -Command $dep.Command)) {
+                    $missing += $dep.Package
+                    Write-PSFMessage -Level Verbose -Message "Missing dependency: $($dep.Package)"
+                }
+            }
+
+            if ($missing.Count -gt 0) {
+                Write-PSFMessage -Level Output -Message "Installing Claude dependencies for Docker: $($missing -join ', ')"
+
+                $aptCmd = "apt-get update && apt-get install -y --no-install-recommends $($missing -join ' ')"
+                Write-PSFMessage -Level Verbose -Message "Running: $aptCmd"
+
+                $psi = New-Object System.Diagnostics.ProcessStartInfo
+                $psi.FileName = '/bin/bash'
+                $psi.Arguments = "-c `"$aptCmd`""
+                $psi.RedirectStandardOutput = $true
+                $psi.RedirectStandardError = $true
+                $psi.UseShellExecute = $false
+                $psi.CreateNoWindow = $true
+
+                $process = New-Object System.Diagnostics.Process
+                $process.StartInfo = $psi
+                $process.Start() | Out-Null
+                $stdout = $process.StandardOutput.ReadToEnd()
+                $stderr = $process.StandardError.ReadToEnd()
+                $process.WaitForExit()
+
+                if ($process.ExitCode -ne 0) {
+                    Write-PSFMessage -Level Warning -Message "Failed to install Docker dependencies. Claude may not work correctly."
+                    Write-PSFMessage -Level Warning -Message "Try running manually: $aptCmd"
+                    if ($stderr) { Write-PSFMessage -Level Verbose -Message $stderr }
+                } else {
+                    Write-PSFMessage -Level Verbose -Message "Docker dependencies installed successfully"
+                }
+            } else {
+                Write-PSFMessage -Level Verbose -Message "All Claude dependencies already installed"
+            }
+
+            # Warn about inotify limit (causes ENOSPC errors)
+            if (Test-Path '/proc/sys/fs/inotify/max_user_watches') {
+                $watches = Get-Content '/proc/sys/fs/inotify/max_user_watches' -ErrorAction SilentlyContinue
+                if ($watches -and [int]$watches -lt 524288) {
+                    Write-PSFMessage -Level Warning -Message "Low inotify limit ($watches) may cause Claude errors. Consider: docker run --sysctl fs.inotify.max_user_watches=524288"
+                }
             }
         }
 
@@ -522,9 +652,9 @@ function Install-AITool {
                     # PowerShell cmdlets must be executed via Invoke-Expression, not Start-Process
                     $isPowerShellCmdlet = $tool.IsWrapper -or $cmd -match '^(Install-Module|Uninstall-Module|Update-Module|Import-Module)'
 
-                    # Check if command contains shell operators (pipes, redirects, etc.)
+                    # Check if command contains shell operators (pipes, redirects, semicolons, etc.)
                     # These require shell execution and can't be handled by Start-Process
-                    $requiresShell = $cmd -match '[|&><]|&&|\|\||iex|Invoke-Expression' -or $isPowerShellCmdlet
+                    $requiresShell = $cmd -match '[|&><;]|&&|\|\||iex|Invoke-Expression|Invoke-WebRequest|Start-Process' -or $isPowerShellCmdlet
 
                     # Handle PowerShell cmdlets directly
                     if ($isPowerShellCmdlet) {
@@ -564,8 +694,8 @@ function Install-AITool {
 
                         # Use appropriate shell based on OS
                         if ($os -eq 'Windows') {
-                            # On Windows, use PowerShell for commands with iex/Invoke-Expression
-                            if ($cmd -match 'iex|Invoke-Expression') {
+                            # On Windows, use PowerShell for commands with iex/Invoke-Expression or PowerShell-specific syntax
+                            if ($cmd -match 'iex|Invoke-Expression|;|Invoke-WebRequest|Start-Process') {
                                 Write-PSFMessage -Level Verbose -Message "Executing via Invoke-Expression"
                                 Invoke-Expression $cmd
                                 $exitCode = $LASTEXITCODE
@@ -834,6 +964,49 @@ function Install-AITool {
                                         # Continue to next command
                                         continue
                                     }
+                                }
+                            }
+                        }
+
+                        # Generic fallback: try FallbackInstallCommands if primary install failed
+                        $hasFallback = $tool.FallbackInstallCommands -and $tool.FallbackInstallCommands[$os]
+                        if ($exitCode -ne 0 -and $hasFallback) {
+                            $fallbackCmds = $tool.FallbackInstallCommands[$os]
+                            if ($fallbackCmds -isnot [array]) { $fallbackCmds = @($fallbackCmds) }
+
+                            # Only try fallback if we're not already executing a fallback command
+                            if ($cmd -notin $fallbackCmds) {
+                                Write-PSFMessage -Level Warning -Message "Installation failed (exit code: $exitCode). Trying fallback installer..."
+                                if ($Version) {
+                                    Write-PSFMessage -Level Warning -Message "Fallback installer may not install specific version $Version. Latest version will be installed."
+                                }
+
+                                $fallbackExitCode = 0
+                                foreach ($fbCmd in $fallbackCmds) {
+                                    Write-PSFMessage -Level Verbose -Message "Executing fallback command: $fbCmd"
+                                    Write-Progress -Activity "Installing $currentToolName" -Status "Retrying with fallback installer" -PercentComplete 40
+
+                                    try {
+                                        Invoke-Expression $fbCmd
+                                        $fallbackExitCode = $LASTEXITCODE
+                                        if (-not $fallbackExitCode) { $fallbackExitCode = 0 }
+                                        Write-PSFMessage -Level Verbose -Message "Fallback command completed with exit code: $fallbackExitCode"
+                                    } catch {
+                                        Write-PSFMessage -Level Verbose -Message "Fallback command threw an exception: $_"
+                                        $fallbackExitCode = 1
+                                    }
+
+                                    if ($fallbackExitCode -ne 0) {
+                                        Write-PSFMessage -Level Warning -Message "Fallback installer also failed (exit code: $fallbackExitCode)"
+                                        break
+                                    }
+                                }
+
+                                $exitCode = $fallbackExitCode
+                                # Update the install command record for the result object
+                                if ($exitCode -eq 0) {
+                                    $installCmd = $fallbackCmds
+                                    break  # Exit the primary install command loop since fallback succeeded
                                 }
                             }
                         }

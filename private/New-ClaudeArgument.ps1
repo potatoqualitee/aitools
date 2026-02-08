@@ -7,7 +7,8 @@ function New-ClaudeArgument {
         [bool]$UsePermissionBypass,
         [bool]$IgnoreInstructions,
         [ValidateSet('low', 'medium', 'high')]
-        [string]$ReasoningEffort
+        [string]$ReasoningEffort,
+        [switch]$UseStreaming
     )
 
     Write-PSFMessage -Level Verbose -Message "Building Claude Code arguments..."
@@ -25,6 +26,13 @@ function New-ClaudeArgument {
     if ($IgnoreInstructions) {
         Write-PSFMessage -Level Debug -Message "Adding minimal system prompt to bypass CLAUDE.md loading"
         $arguments += '--system-prompt', 'You are a helpful AI assistant. Complete the requested task.'
+    }
+
+    if ($UseStreaming) {
+        Write-PSFMessage -Level Debug -Message "Adding streaming output format flags"
+        $arguments += '--print'
+        $arguments += '--verbose'
+        $arguments += '--output-format', 'stream-json'
     }
 
     if ($PSCmdlet.MyInvocation.BoundParameters['Verbose']) {

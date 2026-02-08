@@ -98,6 +98,9 @@ function Invoke-ChatMode {
         [switch]$Raw,
 
         [Parameter()]
+        [switch]$Stream,
+
+        [Parameter()]
         [switch]$DisableRetry,
 
         [Parameter()]
@@ -108,6 +111,21 @@ function Invoke-ChatMode {
     )
 
     Write-PSFMessage -Level Verbose -Message "No files specified - entering chat-only mode"
+
+    # Set OAuth token environment variable for Claude if stored (and not already set)
+    $originalOAuthToken = $null
+    $oauthTokenSetByUs = $false
+    if ($ToolName -eq 'Claude') {
+        if (-not [Environment]::GetEnvironmentVariable('CLAUDE_CODE_OAUTH_TOKEN')) {
+            $storedToken = Get-PSFConfigValue -FullName "AITools.Claude.OAuthToken" -Fallback $null
+            if ($storedToken) {
+                $originalOAuthToken = $env:CLAUDE_CODE_OAUTH_TOKEN
+                $env:CLAUDE_CODE_OAUTH_TOKEN = $storedToken
+                $oauthTokenSetByUs = $true
+                Write-PSFMessage -Level Verbose -Message "Set CLAUDE_CODE_OAUTH_TOKEN from stored config"
+            }
+        }
+    }
 
     # Build combined prompt with context files
     $fullPrompt = $PromptText
@@ -155,6 +173,7 @@ function Invoke-ChatMode {
                 Model               = $Model
                 UsePermissionBypass = $PermissionBypass
                 IgnoreInstructions  = $IgnoreInstructions
+                UseStreaming        = $Stream.IsPresent
             }
             if ($ReasoningEffort) {
                 $argumentParams['ReasoningEffort'] = $ReasoningEffort
@@ -179,6 +198,7 @@ function Invoke-ChatMode {
                 Message             = $fullPrompt
                 Model               = $Model
                 UsePermissionBypass = $PermissionBypass
+                UseStreaming        = $Stream.IsPresent
             }
             New-GeminiArgument @argumentParams
         }
@@ -234,6 +254,31 @@ function Invoke-ChatMode {
     Write-PSFMessage -Level Verbose -Message "Executing chat mode: $($ToolDefinition.Command) $($arguments -join ' ')"
 
     $startTime = Get-Date
+
+    if ($Stream) {
+        Write-PSFMessage -Level Verbose -Message "Executing in streaming mode"
+
+        $supportsNativeStreaming = $ToolName -in @('Claude', 'Gemini')
+        if (-not $supportsNativeStreaming) {
+            Write-PSFMessage -Level Warning -Message "$ToolName does not have native streaming support. Output will be displayed line-by-line."
+        }
+
+        $streamResult = Invoke-StreamingExecution -ToolName $ToolName -ToolCommand $ToolDefinition.Command -Arguments $arguments -FullPrompt $fullPrompt -Context "$ToolName chat mode (streaming)"
+
+        $endTime = Get-Date
+        [PSCustomObject]@{
+            FileName  = 'N/A (Chat Mode - Streaming)'
+            FullPath  = 'N/A (Chat Mode - Streaming)'
+            Tool      = $ToolName
+            Model     = if ($Model) { $Model } else { 'Default' }
+            Result    = $streamResult.Output
+            StartTime = $startTime
+            EndTime   = $endTime
+            Duration  = $streamResult.Duration
+            Success   = $streamResult.Success
+        }
+        return
+    }
 
     try {
         if ($Raw) {
@@ -422,6 +467,16 @@ function Invoke-ChatMode {
             if (Test-Path Env:RUST_LOG) {
                 Remove-Item Env:RUST_LOG -ErrorAction SilentlyContinue
             }
+        }
+
+        # Restore original OAuth token environment variable state
+        if ($oauthTokenSetByUs) {
+            if ($null -ne $originalOAuthToken) {
+                $env:CLAUDE_CODE_OAUTH_TOKEN = $originalOAuthToken
+            } else {
+                Remove-Item Env:CLAUDE_CODE_OAUTH_TOKEN -ErrorAction SilentlyContinue
+            }
+            Write-PSFMessage -Level Verbose -Message "Cleaned up CLAUDE_CODE_OAUTH_TOKEN environment variable"
         }
 
         # Restore original location

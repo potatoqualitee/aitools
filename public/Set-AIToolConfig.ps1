@@ -40,6 +40,15 @@ function Set-AIToolConfig {
         For Copilot: Uses --no-custom-instructions to bypass AGENTS.md loading
         For other tools: Behavior varies based on tool capabilities
 
+    .PARAMETER OAuthToken
+        OAuth token for Claude authentication (Claude only). Accepts a SecureString for secure input.
+        The token is stored in PSFramework configuration and automatically used when executing Claude.
+        This enables headless/unattended execution without requiring the CLAUDE_CODE_OAUTH_TOKEN
+        environment variable to be set manually.
+
+        Note: If CLAUDE_CODE_OAUTH_TOKEN environment variable is set, it takes precedence over the
+        stored token.
+
     .EXAMPLE
         Set-AIToolConfig -Tool Aider -EditMode Diff
 
@@ -71,6 +80,14 @@ function Set-AIToolConfig {
     .EXAMPLE
         Set-AIToolConfig -Tool All -IgnoreInstructions
         Enables instruction bypass for all AI tools that support it.
+
+    .EXAMPLE
+        Set-AIToolConfig -Tool Claude -OAuthToken (Read-Host -AsSecureString "Enter OAuth Token")
+        Stores the OAuth token securely for Claude authentication.
+
+    .EXAMPLE
+        Set-AIToolConfig -Tool Claude -OAuthToken (ConvertTo-SecureString "sk-ant-oat-..." -AsPlainText -Force)
+        Stores the OAuth token for headless/CI execution.
     #>
     [CmdletBinding()]
     param(
@@ -85,7 +102,9 @@ function Set-AIToolConfig {
         [string]$ReasoningEffort,
         [string]$AiderOutputDir,
         [Alias('NoCustomInstructions')]
-        [switch]$IgnoreInstructions
+        [switch]$IgnoreInstructions,
+        [Parameter()]
+        [System.Security.SecureString]$OAuthToken
     )
 
     # Handle "All" or "*" tool selection
@@ -137,6 +156,21 @@ function Set-AIToolConfig {
             Write-PSFMessage -Level Verbose -Message "IgnoreInstructions parameter provided: $($IgnoreInstructions.IsPresent)"
             Set-PSFConfig -FullName "AITools.$currentTool.IgnoreInstructions" -Value $IgnoreInstructions.IsPresent -PassThru | Register-PSFConfig
             Write-PSFMessage -Level Verbose -Message "Set $currentTool ignore instructions to: $($IgnoreInstructions.IsPresent)"
+        }
+
+        if ($PSBoundParameters.ContainsKey('OAuthToken')) {
+            if ($currentTool -ne 'Claude') {
+                Write-PSFMessage -Level Warning -Message "OAuthToken is only applicable to Claude, skipping for $currentTool"
+            } else {
+                # Convert SecureString to plain text for storage
+                # PSFramework stores in user profile with restricted permissions
+                $BSTR = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($OAuthToken)
+                $plainToken = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($BSTR)
+                [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($BSTR)
+
+                Set-PSFConfig -FullName "AITools.$currentTool.OAuthToken" -Value $plainToken -PassThru | Register-PSFConfig
+                Write-PSFMessage -Level Verbose -Message "Set $currentTool OAuth token"
+            }
         }
 
         if ($AiderOutputDir) {

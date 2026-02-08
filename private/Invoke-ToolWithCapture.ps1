@@ -95,6 +95,21 @@ function Invoke-ToolWithCapture {
 
     $batchDesc = if ($BatchSize -gt 1) { "batch of $BatchFilesCount file(s)" } else { $TargetFile }
 
+    # Set OAuth token environment variable for Claude if stored (and not already set)
+    $originalOAuthToken = $null
+    $oauthTokenSetByUs = $false
+    if ($ToolName -eq 'Claude') {
+        if (-not [Environment]::GetEnvironmentVariable('CLAUDE_CODE_OAUTH_TOKEN')) {
+            $storedToken = Get-PSFConfigValue -FullName "AITools.Claude.OAuthToken" -Fallback $null
+            if ($storedToken) {
+                $originalOAuthToken = $env:CLAUDE_CODE_OAUTH_TOKEN
+                $env:CLAUDE_CODE_OAUTH_TOKEN = $storedToken
+                $oauthTokenSetByUs = $true
+                Write-PSFMessage -Level Verbose -Message "Set CLAUDE_CODE_OAUTH_TOKEN from stored config"
+            }
+        }
+    }
+
     if ($Raw) {
         Write-PSFMessage -Level Verbose -Message "Executing in raw mode (no output capturing)"
 
@@ -149,6 +164,15 @@ function Invoke-ToolWithCapture {
             Write-PSFMessage -Level Verbose -Message "Batch processed successfully"
         } else {
             Write-PSFMessage -Level Warning -Message "Failed to process batch (exit code: $exitCode)"
+        }
+
+        # Restore original OAuth token environment variable state
+        if ($oauthTokenSetByUs) {
+            if ($null -ne $originalOAuthToken) {
+                $env:CLAUDE_CODE_OAUTH_TOKEN = $originalOAuthToken
+            } else {
+                Remove-Item Env:CLAUDE_CODE_OAUTH_TOKEN -ErrorAction SilentlyContinue
+            }
         }
 
         return @{
@@ -247,6 +271,15 @@ function Invoke-ToolWithCapture {
     } finally {
         # Clean up temp file
         Remove-Item -Path $tempOutputFile -Force -ErrorAction SilentlyContinue
+
+        # Restore original OAuth token environment variable state
+        if ($oauthTokenSetByUs) {
+            if ($null -ne $originalOAuthToken) {
+                $env:CLAUDE_CODE_OAUTH_TOKEN = $originalOAuthToken
+            } else {
+                Remove-Item Env:CLAUDE_CODE_OAUTH_TOKEN -ErrorAction SilentlyContinue
+            }
+        }
     }
 
     return @{

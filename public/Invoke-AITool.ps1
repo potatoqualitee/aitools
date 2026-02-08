@@ -338,6 +338,8 @@ function Invoke-AITool {
         [Parameter()]
         [switch]$Raw,
         [Parameter()]
+        [switch]$Stream,
+        [Parameter()]
         [ValidateRange(0, 3600)]
         [int]$DelaySeconds = 0,
         [Parameter()]
@@ -400,6 +402,18 @@ function Invoke-AITool {
             Write-PSFMessage -Level Verbose -Message "BatchSize set to $BatchSize - parallel processing will be automatically disabled for batch mode"
         }
 
+        if ($Stream) {
+            if ($BatchSize -gt 1) {
+                Stop-PSFFunction -Message "-Stream cannot be used with -BatchSize. Streaming only works with single file processing." -EnableException $true
+                return
+            }
+            if ($Raw) {
+                Stop-PSFFunction -Message "-Stream and -Raw are mutually exclusive. Use -Stream for native tool streaming or -Raw for direct output piping." -EnableException $true
+                return
+            }
+            Write-PSFMessage -Level Verbose -Message "Streaming mode enabled - output will be displayed in realtime"
+        }
+
         # Initialize attachment array if not already set (for piped images)
         $imageAttachments = @()
         if ($Attachment) {
@@ -431,6 +445,11 @@ function Invoke-AITool {
         $promptResult = ConvertTo-PromptText -Prompt $Prompt
         $promptText = $promptResult.Text
         $promptFilePath = $promptResult.FilePath
+
+        # Warn about large prompts in Docker containers (known issue: empty output with large stdin)
+        if ((Test-DockerContainer) -and $promptText.Length -gt 7000) {
+            Write-PSFMessage -Level Warning -Message "Large prompt detected in Docker ($($promptText.Length) chars). Consider using a prompt file for prompts over 7000 characters to avoid empty output issues."
+        }
 
         # Process Context parameter using helper function
         $contextFiles = Resolve-ContextFiles -Context $Context
@@ -613,6 +632,7 @@ function Invoke-AITool {
                     ImageAttachments   = $imageAttachments
                     PromptFilePath     = $promptFilePath
                     Raw                = $Raw
+                    Stream             = $Stream
                     DisableRetry       = $DisableRetry
                     MaxRetryMinutes    = $MaxRetryMinutes
                     OriginalLocation   = $script:originalLocation
@@ -642,6 +662,11 @@ function Invoke-AITool {
 
             # Determine if parallel processing should be used (based on batch count, not file count)
             $shouldUseParallel = (-not $NoParallel) -and ($batches.Count -ge 4)
+
+            if ($Stream -and $filesToProcess.Count -gt 1) {
+                Write-PSFMessage -Level Warning -Message "Streaming mode with multiple files - processing sequentially"
+                $shouldUseParallel = $false
+            }
 
             try {
                 if ($shouldUseParallel) {
@@ -778,6 +803,7 @@ function Invoke-AITool {
                                     Model               = $modelToUse
                                     UsePermissionBypass = $permissionBypass
                                     IgnoreInstructions  = $ignoreInstructionsToUse
+                                    UseStreaming        = $Stream.IsPresent
                                 }
                                 if ($reasoningEffortToUse) {
                                     $argumentParams['ReasoningEffort'] = $reasoningEffortToUse
@@ -804,6 +830,7 @@ function Invoke-AITool {
                                     Message             = $promptText
                                     Model               = $modelToUse
                                     UsePermissionBypass = $permissionBypass
+                                    UseStreaming        = $Stream.IsPresent
                                 }
                                 New-GeminiArgument @argumentParams
                             }
@@ -892,6 +919,38 @@ function Invoke-AITool {
                         $toolExitCode = 0
 
                         try {
+                            if ($Stream) {
+                                Write-PSFMessage -Level Verbose -Message "Executing in streaming mode"
+
+                                $supportsNativeStreaming = $currentTool -in @('Claude', 'Gemini')
+                                if (-not $supportsNativeStreaming) {
+                                    Write-PSFMessage -Level Warning -Message "$currentTool does not have native streaming support. Output will be displayed line-by-line."
+                                }
+
+                                $streamResult = Invoke-StreamingExecution -ToolName $currentTool -ToolCommand $toolDef.Command -Arguments $arguments -FullPrompt $fullPrompt -Context "$currentTool processing $batchDesc"
+
+                                $outputFileName = if ($BatchSize -gt 1) { "Batch $batchIndex ($($batchFilesToProcess.Count) files)" } else { [System.IO.Path]::GetFileName($targetFile) }
+                                $outputFullPath = if ($BatchSize -gt 1) { "Batch: $($batchFilesToProcess -join ', ')" } else { $targetFile }
+
+                                [PSCustomObject]@{
+                                    FileName   = $outputFileName
+                                    FullPath   = $outputFullPath
+                                    Tool       = $currentTool
+                                    Model      = if ($modelToUse) { $modelToUse } else { 'Default' }
+                                    Result     = $streamResult.Output
+                                    StartTime  = $startTime
+                                    EndTime    = Get-Date
+                                    Duration   = $streamResult.Duration
+                                    Success    = $streamResult.Success
+                                    BatchFiles = if ($BatchSize -gt 1) { $batchFilesToProcess } else { @($targetFile) }
+                                }
+
+                                if ($targetDirectory -and (Test-Path $targetDirectory)) {
+                                    Pop-Location
+                                }
+                                continue
+                            }
+
                             if ($Raw) {
                                 Write-PSFMessage -Level Verbose -Message "Executing in raw mode (no output capturing)"
                                 $rawOutput = $null

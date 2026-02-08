@@ -4,7 +4,8 @@ function New-GeminiArgument {
         [string]$TargetFile,
         [string]$Message,
         [string]$Model,
-        [bool]$UsePermissionBypass
+        [bool]$UsePermissionBypass,
+        [switch]$UseStreaming
     )
 
     Write-PSFMessage -Level Verbose -Message "Building Gemini CLI arguments..."
@@ -24,6 +25,11 @@ function New-GeminiArgument {
     # Explicitly disable screen reader mode
     $arguments += '--screen-reader'
     $arguments += 'false'
+
+    if ($UseStreaming) {
+        Write-PSFMessage -Level Debug -Message "Adding streaming output format flag"
+        $arguments += '--output-format', 'stream-json'
+    }
 
     # SECURITY: Only allow file operations - no command execution, web search, or other tools
     # This ensures Gemini can only read, write, and edit files - nothing else
